@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interdimentional</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen" width="240" height="160" aria-label="Interdimentional title screen"></canvas>
+
+<script>
+// GBA resolution, scaled up by whole pixels.
+const W = 240, H = 160;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+function fit() {
+  const s = Math.max(1, Math.floor(Math.min(innerWidth / W, innerHeight / H)));
+  canvas.style.width = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+}
+addEventListener('resize', fit);
+fit();
+
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  return [c, x];
+}
+
+// 4x4 Bayer matrix for GBA-style dithering.
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => v / 16 - 0.5);
+const bayer = (x, y) => BAYER[(y & 3) * 4 + (x & 3)];
+
+// ---------- Pixel font (5x7) ----------
+const FONT = {
+  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  C: ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  G: ['.####', '#....', '#....', '#.###', '#...#', '#...#', '.###.'],
+  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  I: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+  L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
+  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
+  ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+};
+
+// Renders text to a mask grid at the given pixel scale (a number, or [x, y]).
+function textMask(str, scale, gap) {
+  const [kx, ky] = Array.isArray(scale) ? scale : [scale, scale];
+  const cw = 5 * kx, ch = 7 * ky;
+  const w = str.length * (cw + gap) - gap;
+  const mask = Array.from({ length: ch }, () => new Uint8Array(w));
+  [...str].forEach((c, i) => {
+    const g = FONT[c] || FONT[' '];
+    for (let gy = 0; gy < 7; gy++)
+      for (let gx = 0; gx < 5; gx++)
+        if (g[gy][gx] === '#')
+          for (let sy = 0; sy < ky; sy++)
+            for (let sx = 0; sx < kx; sx++)
+              mask[gy * ky + sy][i * (cw + gap) + gx * kx + sx] = 1;
+  });
+  return { mask, w, h: ch };
+}
+
+// Draws a mask with a 1px outline, optional drop shadow and per-row fill colors.
+function renderText(str, { scale = 1, gap = 1, rows, outline = '#080818', shadow, highlight }) {
+  const { mask, w, h } = textMask(str, scale, gap);
+  const pad = 3;
+  const [c, x] = makeCanvas(w + pad * 2, h + pad * 2);
+  const on = (mx, my) => my >= 0 && my < h && mx >= 0 && mx < w && mask[my][mx];
+  const px = (mx, my, col) => { x.fillStyle = col; x.fillRect(mx + pad, my + pad, 1, 1); };
+  if (shadow)
+    for (let my = -1; my <= h + 1; my++) for (let mx = -1; mx <= w + 1; mx++)
+      if (on(mx - 2, my - 2) || on(mx - 1, my - 2) || on(mx - 2, my - 1)) px(mx, my, shadow);
+  for (let my = -1; my <= h; my++) for (let mx = -1; mx <= w; mx++)
+    if (!on(mx, my) && (on(mx - 1, my) || on(mx + 1, my) || on(mx, my - 1) || on(mx, my + 1) ||
+        on(mx - 1, my - 1) || on(mx + 1, my + 1) || on(mx - 1, my + 1) || on(mx + 1, my - 1))) px(mx, my, outline);
+  for (let my = 0; my < h; my++) for (let mx = 0; mx < w; mx++)
+    if (on(mx, my)) px(mx, my, highlight && !on(mx, my - 1) ? highlight : rows[Math.min(rows.length - 1, Math.floor(my / h * rows.length))]);
+  return c;
+}
+
+// Title: the drawing's blue → yellow → orange → red, banded like a GBA logo.
+const titleImg = renderText('INTERDIMENTIONAL', {
+  scale: [2, 3], gap: 3,
+  rows: ['#9ad8ff', '#58a8f0', '#4890e0', '#3870c8', '#f8e048', '#f8b030', '#f08028', '#e05820', '#c03818', '#902810'],
+  highlight: '#ffffff',
+  shadow: '#3a1058',
+});
+const pressImg = renderText('PRESS SPACE TO START', { rows: ['#ffffff', '#fff8a0', '#f8e048'], shadow: '#080818' });
+const enterImg = renderText('ENTERING ANOTHER DIMENSION...', { rows: ['#ffffff', '#c8ffd0', '#70ff90'] });
+
+// ---------- Sprites ----------
+const PAL = {
+  k: '#101018', s: '#f0b080', S: '#b87048', c: '#2838a0', C: '#5068d8',
+  r: '#e84040', R: '#a02828', b: '#3050b0', B: '#1c2c70', w: '#f8f8f8',
+  p: '#f8a8b8', P: '#d87088', g: '#505868', G: '#a0a8b8',
+  m: '#e04890', l: '#f8a0c8', o: '#d88830', O: '#f8d080', y: '#d0d0e0',
+  h: '#186030', H: '#30a050',
+};
+function sprite(rows) {
+  const w = Math.max(...rows.map(r => r.length));
+  const [c, x] = makeCanvas(w, rows.length);
+  rows.forEach((row, y) => [...row].forEach((ch, xx) => {
+    if (PAL[ch]) { x.fillStyle = PAL[ch]; x.fillRect(xx, y, 1, 1); }
+  }));
+  return c;
+}
+
+const SPR = {
+  pig: sprite([
+    '..k..k........',
+    '.kpkkpkkkkkkk.',
+    'kpppppppppppk.',
+    'kpkppppppppppk',
+    'PPPppppppppkpk',
+    'PkPpppppppppk.',
+    'kPPppppppppk..',
+    '.kpkkkkkkpk...',
+    '.kpk....kpk...',
+    '.kk.....kk....',
+  ]),
+  blaster: sprite([
+    'kkkkkkkkkk..',
+    'kgGGGGGGGgkk',
+    'kggggggggggk',
+    'kkkggkkkkkkk',
+    '..kggk......',
+    '..kggk......',
+    '..kkkk......',
+  ]),
+  lolli: sprite([
+    '..kkkkk..',
+    '.klmmmlk.',
+    'klmlllmlk',
+    'kmlmmmlmk',
+    'kmlmlmlmk',
+    'kmlmmlmlk',
+    'klmlllmlk',
+    '.klmmmmk.',
+    '..kkkkk..',
+    '....w....',
+    '....w....',
+    '....w....',
+    '....w....',
+  ]),
+  chip: sprite([
+    '...y.y..y.y...',
+    '..kkkkkkkkkk..',
+    '..kHHHHHHHhk..',
+    'yykHhhhhhhhkyy',
+    '..kHhwhhhhhk..',
+    'yykHhhhhhhhkyy',
+    '..kHhhgggghk..',
+    '..kHhhgggghk..',
+    'yykHhhhhhhhkyy',
+    '..kHhhhhhhhk..',
+    'yykhhhhhhhhkyy',
+    '..khhhhhhhhk..',
+    '..kkkkkkkkkk..',
+    '...y.y..y.y...',
+  ]),
+  ring: sprite([
+    '....kkk....',
+    '...kOook...',
+    '..kkoookk..',
+    '.kyykkkyyk.',
+    'kyk.....kyk',
+    'kyk.....kyk',
+    'kyk.....kyk',
+    'kyk.....kyk',
+    '.kyk...kyk.',
+    '..kyyyyyk..',
+    '...kkkkk...',
+  ]),
+};
+
+// Seeded random so the still image is the same every load.
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+
+
+// ---------- Portal (bird's-eye view down the tunnel) ----------
+const CX = 120, CY = 80;
+const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+// Ramps go from deep (center) to near (edges).
+const GREEN = ['#04140a', '#0a3018', '#107830', '#30c858', '#70ff90'].map(hex);
+const BLUE  = ['#060a30', '#10248a', '#2850d8', '#58a0ff', '#a8d0ff'].map(hex);
+const PURP  = ['#14062a', '#3a1078', '#6020b0', '#9848e8', '#d098ff'].map(hex);
+const CORE  = hex('#e8fff0');
+
+function drawPortal(target, zoom = 1) {
+  const img = target.createImageData(W, H);
+  const d = img.data;
+  const maxR = Math.hypot(CX, CY);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const dx = (x - CX) / zoom, dy = (y - CY) / zoom;
+    const nd = Math.hypot(dx, dy) / maxR;            // 0 center → 1 corner
+    const a = Math.atan2(dy, dx);
+    const dz = bayer(x, y);
+    // Spiral arms twisting down the tunnel, plus depth rings.
+    const arms = Math.sin(a * 3 + Math.log(nd + 0.02) * 6) + dz * 0.5;
+    const arms2 = Math.sin(a * 2 - Math.log(nd + 0.02) * 4 + 1.7) + dz * 0.5;
+    const rings = Math.sin(14 / (nd + 0.08));
+    // Brightness: dark down the throat, bright toward the viewer, glowing pinpoint core.
+    let lvl = Math.min(4, Math.max(0, Math.floor(nd * 4.6 + rings * 0.7 + dz * 1.2)));
+    let ramp = GREEN;
+    if (arms > 0.75) ramp = PURP;
+    else if (arms2 > 0.7) ramp = BLUE;
+    let col = ramp[lvl];
+    const core = nd * 9 + dz * 0.8;
+    if (core < 0.25) col = CORE;
+    else if (core < 0.55) col = GREEN[4];
+    else if (core < 0.85) col = GREEN[3];
+    const i = (y * W + x) * 4;
+    d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+  }
+  target.putImageData(img, 0, 0);
+}
+
+// ---------- Falling things, frozen mid-fall ----------
+// Smaller = deeper down the tunnel. Angles follow the swirl.
+const things = [
+  // Positions match the hand-drawn reference: pig and blaster on the left,
+  // microchip, lollipop and ring on the right. The guy is drawn separately.
+  { img: 'pig',      x: 42,  y: 80,  s: 1.8, rot: 0 },
+  { img: 'blaster',  x: 40,  y: 128, s: 2,   rot: 0.5 },
+  { img: 'chip',     x: 188, y: 68,  s: 2,   rot: 0 },
+  { img: 'lolli',    x: 196, y: 142, s: 1.7, rot: -0.5 },
+  { img: 'ring',     x: 202, y: 108, s: 1.7, rot: 0 },
+];
+
+function drawThing(o) {
+  const img = SPR[o.img];
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(o.rot);
+  ctx.scale(o.s, o.s);
+  // Drop shadow cast down into the portal.
+  ctx.globalAlpha = 0.45;
+  ctx.filter = 'brightness(0)';
+  ctx.drawImage(img, -img.width / 2 + 2, -img.height / 2 + 2);
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  ctx.restore();
+}
+
+
+// ---------- The guy, in perspective ----------
+// Camera looks straight down; he faces up at it, falling away into the portal
+// and reaching toward the viewer — so hands are biggest, feet smallest.
+
+// Draws one body part on its own layer, snaps edges to hard pixels and adds a dark outline.
+function part(draw) {
+  const [c, x] = makeCanvas(W, H);
+  draw(x);
+  const img = x.getImageData(0, 0, W, H), d = img.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] > 110 ? 255 : 0;
+  const out = new Uint8ClampedArray(d);
+  const solid = (px, py) => px >= 0 && py >= 0 && px < W && py < H && d[(py * W + px) * 4 + 3];
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    if (solid(px, py)) continue;
+    if (solid(px - 1, py) || solid(px + 1, py) || solid(px, py - 1) || solid(px, py + 1)) {
+      const i = (py * W + px) * 4;
+      out[i] = 16; out[i + 1] = 16; out[i + 2] = 24; out[i + 3] = 255;
+    }
+  }
+  x.putImageData(new ImageData(out, W, H), 0, 0);
+  ctx.drawImage(c, 0, 0);
+}
+const poly = (x, pts, col) => {
+  x.fillStyle = col; x.beginPath();
+  pts.forEach(([a, b], i) => i ? x.lineTo(a, b) : x.moveTo(a, b));
+  x.closePath(); x.fill();
+};
+const line = (x, x0, y0, x1, y1, w, col) => {
+  x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke();
+};
+const disc = (x, cx, cy, r, col) => { x.fillStyle = col; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); };
+const mirror = pts => pts.map(([a, b]) => [240 - a, b]);
+
+function drawGuy() {
+  ctx.save();
+  ctx.translate(0, -1);
+  // Legs kick toward the camera too: jeans widen, shoes show their soles.
+  const legL = [[112, 92], [120, 96], [108, 110], [96, 108]];
+  // Legs, torso, arms and hands share one layer so the outline only traces the outside.
+  // Arms widen and hands open up as they reach toward the camera.
+  const armL = [[106, 70], [113, 74], [101, 50], [88, 46]];
+  function hand(x, cx, cy, dir, flip) {
+    const fingers = [[-1.4, 11.5, 5.5], [-0.7, 12, 3.5], [-0.2, 13, 3.5], [0.3, 12, 3.5], [0.8, 10, 3]];
+    for (const [f, len, w] of fingers) {
+      const a = dir + f * flip;
+      line(x, cx, cy, cx + Math.cos(a) * len, cy + Math.sin(a) * len, w, '#f0b080');
+    }
+    disc(x, cx, cy, 6.5, '#f0b080');
+  }
+  part(x => {
+    poly(x, legL, '#3050b0');
+    poly(x, mirror(legL), '#1c2c70');
+    poly(x, armL, '#f0b080');
+    poly(x, mirror(armL), '#f0b080');
+    hand(x, 92, 44, -Math.PI * 0.62, -1);
+    hand(x, 148, 44, -Math.PI * 0.38, 1);
+    poly(x, [[106, 69], [134, 69], [128, 96], [112, 96]], '#e84040');
+    poly(x, [[124, 69], [134, 69], [128, 96], [120, 96]], '#a02828');
+    // Shirt hem, darker, so it tucks into the jeans.
+    poly(x, [[112, 90], [121, 90], [121, 92], [112, 92]], '#c03030');
+    poly(x, [[121, 90], [128, 90], [128, 92], [121, 92]], '#801c1c');
+    // Waistband shaded to line up with the shirt and leg shading.
+    poly(x, [[110, 92], [121, 92], [120, 96], [110, 96]], '#3050b0');
+    poly(x, [[121, 92], [130, 92], [130, 96], [120, 96]], '#1c2c70');
+    line(x, 109, 72, 106, 66, 8, '#e84040');
+    line(x, 131, 72, 134, 66, 8, '#a02828');
+  });
+  for (const [cx, rot] of [[101, 0.5], [139, -0.5]]) {
+    part(x => {
+      x.save(); x.translate(cx, 112); x.rotate(rot);
+      x.fillStyle = '#f8f8f8'; x.beginPath(); x.ellipse(0, 0, 6, 8.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#a0a8b8'; x.beginPath(); x.ellipse(0, 0.5, 4, 6.5, 0, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#505868'; for (const ty of [-4, -1, 2, 5]) x.fillRect(-3, ty, 6, 1);
+      x.restore();
+    });
+  }
+  // Head: face turned up at the camera, cap turned to the side, mouth wide open.
+  part(x => {
+    disc(x, 120, 63, 12.5, '#f0b080');
+    x.fillStyle = '#2838a0';
+    x.beginPath(); x.arc(120, 63, 12.5, Math.PI * 1.08, Math.PI * 1.92); x.closePath(); x.fill();
+    // brim sticking out sideways
+    x.save(); x.translate(106, 56); x.rotate(-0.5);
+    x.fillStyle = '#1c2878'; x.beginPath(); x.ellipse(0, 0, 7, 3.5, 0, 0, Math.PI * 2); x.fill();
+    x.restore();
+    x.fillStyle = '#5068d8'; x.fillRect(118, 53, 6, 1);
+    x.fillStyle = '#b87048'; x.fillRect(108, 70, 3, 2); x.fillRect(129, 70, 3, 2);
+  });
+  // Face details, pixel by pixel.
+  const px = (col, ...pts) => { ctx.fillStyle = col; for (let i = 0; i < pts.length; i += 2) ctx.fillRect(pts[i], pts[i + 1], 1, 1); };
+  // wide eyes
+  ctx.fillStyle = '#f8f8f8'; ctx.fillRect(113, 61, 4, 4); ctx.fillRect(123, 61, 4, 4);
+  ctx.fillStyle = '#101018'; ctx.fillRect(114, 62, 2, 2); ctx.fillRect(124, 62, 2, 2);
+  // raised, panicked eyebrows
+  px('#101018', 112, 59, 113, 58, 114, 58, 115, 58, 125, 58, 126, 58, 127, 58, 128, 59);
+  // screaming mouth
+  ctx.fillStyle = '#101018'; ctx.fillRect(116, 67, 8, 7);
+  ctx.fillStyle = '#6a1020'; ctx.fillRect(117, 68, 6, 5);
+  ctx.fillStyle = '#f8f8f8'; ctx.fillRect(117, 68, 6, 1);
+  ctx.fillStyle = '#e05070'; ctx.fillRect(118, 71, 4, 2);
+  px('#101018', 116, 67, 123, 67, 116, 73, 123, 73);
+  px('#f0b080', 116, 67, 123, 67);
+  // palm creases
+  px('#b87048', 89, 45, 90, 46, 91, 46, 92, 47, 151, 45, 150, 46, 149, 46, 148, 47);
+  ctx.restore();
+}
+
+function render() {
+  drawPortal(ctx);
+  // Sparks streaking down the spiral.
+  for (let i = 0; i < 70; i++) {
+    const r = 12 + rand() * 140, a = rand() * Math.PI * 2;
+    const x = Math.round(CX + Math.cos(a) * r), y = Math.round(CY + Math.sin(a) * r);
+    ctx.fillStyle = ['#ffffff', '#a8d0ff', '#d098ff', '#a0ffb8'][rand() * 4 | 0];
+    const len = r > 70 ? 3 : r > 35 ? 2 : 1;
+    for (let k = 0; k < len; k++) {
+      const t = a + k * 0.06;
+      ctx.fillRect(Math.round(CX + Math.cos(t) * (r + k)), Math.round(CY + Math.sin(t) * (r + k)), 1, 1);
+    }
+  }
+  things.forEach(drawThing);
+  drawGuy();
+  ctx.drawImage(titleImg, Math.round((W - titleImg.width) / 2), 4);
+  ctx.drawImage(pressImg, Math.round((W - pressImg.width) / 2), 123);
+}
+render();
+
+// ---------- Start: dive into the portal ----------
+let started = false;
+function start() {
+  if (started) return;
+  started = true;
+  const t0 = performance.now();
+  (function dive(now) {
+    const t = (now - t0) / 1000;
+    if (t < 0.8) {
+      drawPortal(ctx, 1 + t * t * 8);
+      requestAnimationFrame(dive);
+    } else if (t < 1.4) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+      requestAnimationFrame(dive);
+    } else {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(enterImg, Math.round((W - enterImg.width) / 2), 76);
+      // TODO: hand off to the first level here.
+    }
+  })(t0);
+}
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); start(); }
+});
+canvas.addEventListener('click', start);
+</script>
+</body>
+</html>
