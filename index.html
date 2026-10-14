@@ -66,7 +66,8 @@ const FONT = {
 };
 
 // Renders text to a mask grid at the given pixel scale (a number, or [x, y]).
-function textMask(str, scale, gap) {
+// `bold` widens every stroke by that many pixels.
+function textMask(str, scale, gap, bold = 0) {
   const [kx, ky] = Array.isArray(scale) ? scale : [scale, scale];
   const cw = 5 * kx, ch = 7 * ky;
   const w = str.length * (cw + gap) - gap;
@@ -80,12 +81,15 @@ function textMask(str, scale, gap) {
             for (let sx = 0; sx < kx; sx++)
               mask[gy * ky + sy][i * (cw + gap) + gx * kx + sx] = 1;
   });
+  for (let b = 0; b < bold; b++)
+    for (const row of mask)
+      for (let x = w - 1; x > 0; x--) if (row[x - 1]) row[x] = 1;
   return { mask, w, h: ch };
 }
 
 // Draws a mask with a 1px outline, optional drop shadow and per-row fill colors.
-function renderText(str, { scale = 1, gap = 1, rows, outline = '#080818', shadow, highlight }) {
-  const { mask, w, h } = textMask(str, scale, gap);
+function renderText(str, { scale = 1, gap = 1, bold = 0, rows, outline = '#080818', shadow, highlight }) {
+  const { mask, w, h } = textMask(str, scale, gap, bold);
   const pad = 3;
   const [c, x] = makeCanvas(w + pad * 2, h + pad * 2);
   const on = (mx, my) => my >= 0 && my < h && mx >= 0 && mx < w && mask[my][mx];
@@ -103,7 +107,7 @@ function renderText(str, { scale = 1, gap = 1, rows, outline = '#080818', shadow
 
 // Title: the drawing's blue → yellow → orange → red, banded like a GBA logo.
 const titleImg = renderText('INTERDIMENTIONAL', {
-  scale: [2, 3], gap: 3,
+  scale: [2, 3], gap: 3, bold: 1,
   rows: ['#9ad8ff', '#58a8f0', '#4890e0', '#3870c8', '#f8e048', '#f8b030', '#f08028', '#e05820', '#c03818', '#902810'],
   highlight: '#ffffff',
   shadow: '#3a1058',
