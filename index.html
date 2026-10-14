@@ -53,6 +53,7 @@ const FONT = {
   G: ['.####', '#....', '#....', '#.###', '#...#', '#...#', '.###.'],
   H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
   I: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
   L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
   M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
   N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
@@ -61,6 +62,14 @@ const FONT = {
   R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
   S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
   T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  V: ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+  0: ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  1: ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  2: ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  3: ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  4: ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+  '%': ['##..#', '##..#', '...#.', '..#..', '.#...', '#..##', '#..##'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
@@ -97,7 +106,7 @@ function renderText(str, { scale = 1, gap = 1, bold = 0, rows, outline = '#08081
   if (shadow)
     for (let my = -1; my <= h + 1; my++) for (let mx = -1; mx <= w + 1; mx++)
       if (on(mx - 2, my - 2) || on(mx - 1, my - 2) || on(mx - 2, my - 1)) px(mx, my, shadow);
-  for (let my = -1; my <= h; my++) for (let mx = -1; mx <= w; mx++)
+  if (outline) for (let my = -1; my <= h; my++) for (let mx = -1; mx <= w; mx++)
     if (!on(mx, my) && (on(mx - 1, my) || on(mx + 1, my) || on(mx, my - 1) || on(mx, my + 1) ||
         on(mx - 1, my - 1) || on(mx + 1, my + 1) || on(mx - 1, my + 1) || on(mx + 1, my - 1))) px(mx, my, outline);
   for (let my = 0; my < h; my++) for (let mx = 0; mx < w; mx++)
@@ -106,14 +115,14 @@ function renderText(str, { scale = 1, gap = 1, bold = 0, rows, outline = '#08081
 }
 
 // Title: the drawing's blue → yellow → orange → red, banded like a GBA logo.
-const titleImg = renderText('INTERDIMENTIONAL', {
+const LOGO = {
   scale: [2, 3], gap: 3, bold: 1,
   rows: ['#9ad8ff', '#58a8f0', '#4890e0', '#3870c8', '#f8e048', '#f8b030', '#f08028', '#e05820', '#c03818', '#902810'],
   highlight: '#ffffff',
   shadow: '#3a1058',
-});
+};
+const titleImg = renderText('INTERDIMENTIONAL', LOGO);
 const pressImg = renderText('PRESS SPACE TO START', { rows: ['#ffffff', '#fff8a0', '#f8e048'], shadow: '#080818' });
-const enterImg = renderText('ENTERING ANOTHER DIMENSION...', { rows: ['#ffffff', '#c8ffd0', '#70ff90'] });
 
 // ---------- Sprites ----------
 const PAL = {
@@ -400,11 +409,108 @@ function render() {
 }
 render();
 
-// ---------- Start: dive into the portal ----------
-let started = false;
+// ---------- Select Save screen ----------
+const selectTitleImg = renderText('SELECT SAVE', LOGO);
+const hintImg = renderText('CLICK A SAVE', { rows: ['#ffffff', '#c8ffd0'] });
+const SLOT_W = 102, SLOT_H = 50, CHAMFER = 5;
+const SLOTS = [[12, 36], [126, 36], [12, 93], [126, 93]];
+const GROW_W = 8, GROW_H = 4; // how much a slot grows while hovered
+
+// Inside test for a rectangle with clipped corners.
+function inChamfer(x, y, w, h, c) {
+  if (x < 0 || y < 0 || x >= w || y >= h) return false;
+  const dx = Math.min(x, w - 1 - x), dy = Math.min(y, h - 1 - y);
+  return dx + dy >= c;
+}
+
+// Pre-render each slot: lavender crayon-streaked panel with a peach progress band.
+// Each slot gets a normal and a slightly bigger hovered version, drawn crisp at both sizes.
+function makeSlot(i, w, h) {
+  const [c, x] = makeCanvas(w, h);
+  const band = h - 15;
+  const put = (px, py, col) => { x.fillStyle = col; x.fillRect(px, py, 1, 1); };
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    if (!inChamfer(px, py, w, h, CHAMFER)) continue;
+    if (!inChamfer(px - 1, py - 1, w - 2, h - 2, CHAMFER - 1)) {
+      put(px, py, '#101018');
+      continue;
+    }
+    const edgeTL = !inChamfer(px - 2, py - 2, w - 4, h - 4, CHAMFER - 1);
+    // crayon-like streaks
+    const v = Math.sin(py * 1.3 + Math.sin(px * 0.15) * 1.5) + bayer(px, py) * 0.6;
+    let col;
+    if (py === band) col = '#8078b8';
+    else if (py > band) col = v > 0.6 ? '#ffd8b8' : v < -0.6 ? '#f0b080' : '#f8c8a0';
+    else col = v > 0.6 ? '#d8d0f4' : v < -0.6 ? '#a8a0d8' : '#c0b8e8';
+    if (edgeTL) col = px > w / 2 && py > h / 2 ? '#8078b8' : (py > band ? '#fff0e0' : '#ece8ff');
+    put(px, py, col);
+  }
+  const label = renderText('SAVE ' + (i + 1), { rows: ['#302858'], outline: null });
+  const prog = renderText('PROGRESS 0%', { rows: ['#603820'], outline: null });
+  x.drawImage(label, 6 - 3, 5 - 3);
+  x.drawImage(prog, 6 - 3, band + 4 - 3);
+  return c;
+}
+const slotImgs = SLOTS.map((_, i) => makeSlot(i, SLOT_W, SLOT_H));
+const slotBigImgs = SLOTS.map((_, i) => makeSlot(i, SLOT_W + GROW_W, SLOT_H + GROW_H));
+
+let hover = -1, chosenAt = null;
+
+function renderSelect(now) {
+  ctx.drawImage(selectBg, 0, 0);
+  ctx.drawImage(selectTitleImg, Math.round((W - selectTitleImg.width) / 2), 4);
+  SLOTS.forEach(([sx, sy], i) => { if (i !== hover) ctx.drawImage(slotImgs[i], sx, sy); });
+  if (hover >= 0) {
+    // Hovered slot pops out a little bigger, with a glowing frame; flashes white once clicked.
+    const w = SLOT_W + GROW_W, h = SLOT_H + GROW_H;
+    const sx = SLOTS[hover][0] - GROW_W / 2, sy = SLOTS[hover][1] - GROW_H / 2;
+    ctx.drawImage(slotBigImgs[hover], sx, sy);
+    const blink = Math.floor(now / 300) % 2;
+    const flashing = chosenAt !== null && Math.floor((now - chosenAt) / 80) % 2 === 0;
+    const cols = flashing ? ['#ffffff', '#ffffff'] : blink ? ['#70ff90', '#30c858'] : ['#a0ffb8', '#70ff90'];
+    for (let py = -3; py < h + 3; py++) for (let px = -3; px < w + 3; px++) {
+      if (inChamfer(px, py, w, h, CHAMFER)) continue;
+      if (inChamfer(px + 1, py + 1, w + 2, h + 2, CHAMFER + 1)) ctx.fillStyle = cols[0];
+      else if (inChamfer(px + 3, py + 3, w + 6, h + 6, CHAMFER + 2)) ctx.fillStyle = cols[1];
+      else continue;
+      ctx.fillRect(sx + px, sy + py, 1, 1);
+    }
+  }
+  ctx.drawImage(hintImg, Math.round((W - hintImg.width) / 2), 147);
+}
+
+// Dimmed, dithered portal so the screen feels like the other side of the dive.
+const [selectBg, sbx] = makeCanvas(W, H);
+drawPortal(sbx);
+sbx.fillStyle = 'rgba(0, 0, 16, 0.55)';
+sbx.fillRect(0, 0, W, H);
+sbx.fillStyle = '#000010';
+for (let y = 0; y < H; y++) for (let x = (y & 1); x < W; x += 2) sbx.fillRect(x, y, 1, 1);
+
+function selectLoop(now) {
+  if (state !== 'select') return;
+  renderSelect(now);
+  if (chosenAt !== null && now - chosenAt > 700) {
+    chosenAt = null;
+    loadSave(hover);
+    return;
+  }
+  requestAnimationFrame(selectLoop);
+}
+
+function loadSave(i) {
+  state = 'loading';
+  canvas.style.cursor = 'default';
+  // TODO: hand off to the first level here, using save slot i.
+}
+
+// ---------- Screen flow ----------
+let state = 'title';
+
+// Title → dive into the portal → white flash → Select Save.
 function start() {
-  if (started) return;
-  started = true;
+  if (state !== 'title') return;
+  state = 'diving';
   const t0 = performance.now();
   (function dive(now) {
     const t = (now - t0) / 1000;
@@ -416,17 +522,44 @@ function start() {
       ctx.fillRect(0, 0, W, H);
       requestAnimationFrame(dive);
     } else {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-      ctx.drawImage(enterImg, Math.round((W - enterImg.width) / 2), 76);
-      // TODO: hand off to the first level here.
+      state = 'select';
+      requestAnimationFrame(selectLoop);
     }
   })(t0);
 }
+
+function backToTitle() {
+  state = 'title';
+  hover = -1;
+  canvas.style.cursor = 'default';
+  render();
+}
+
 addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); start(); }
+  if (state === 'title' && e.code === 'Space') { e.preventDefault(); start(); }
+  else if (state === 'select' && chosenAt === null && e.code === 'Escape') backToTitle();
 });
-canvas.addEventListener('click', start);
+
+// Save slots are picked with the mouse.
+function slotAt(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  return SLOTS.findIndex(([sx, sy]) => x >= sx && x < sx + SLOT_W && y >= sy && y < sy + SLOT_H);
+}
+canvas.addEventListener('mousemove', e => {
+  if (state !== 'select' || chosenAt !== null) return;
+  hover = slotAt(e);
+  canvas.style.cursor = hover >= 0 ? 'pointer' : 'default';
+});
+canvas.addEventListener('mouseleave', () => {
+  if (state === 'select' && chosenAt === null) hover = -1;
+});
+canvas.addEventListener('click', e => {
+  if (state === 'title') return start();
+  if (state !== 'select' || chosenAt !== null) return;
+  hover = slotAt(e);
+  if (hover >= 0) chosenAt = performance.now();
+});
 </script>
 </body>
 </html>
