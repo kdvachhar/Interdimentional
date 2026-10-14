@@ -70,6 +70,24 @@ const FONT = {
   3: ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
   4: ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
   '%': ['##..#', '##..#', '...#.', '..#..', '.#...', '#..##', '#..##'],
+  B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  J: ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+  Q: ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  Z: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  5: ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  6: ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+  7: ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  8: ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  9: ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+  ',': ['.....', '.....', '.....', '.....', '.....', '..#..', '.#...'],
+  "'": ['..#..', '..#..', '.#...', '.....', '.....', '.....', '.....'],
+  '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
+  ':': ['.....', '..#..', '.....', '.....', '.....', '..#..', '.....'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
@@ -131,6 +149,8 @@ const PAL = {
   p: '#f8a8b8', P: '#d87088', g: '#505868', G: '#a0a8b8',
   m: '#e04890', l: '#f8a0c8', o: '#d88830', O: '#f8d080', y: '#d0d0e0',
   h: '#186030', H: '#30a050',
+  n: '#7a4420', N: '#4a2810', v: '#9048c0', V: '#602c88',
+  q: '#ff8878', u: '#5c84e0',
 };
 function sprite(rows) {
   const w = Math.max(...rows.map(r => r.length));
@@ -487,21 +507,642 @@ sbx.fillRect(0, 0, W, H);
 sbx.fillStyle = '#000010';
 for (let y = 0; y < H; y++) for (let x = (y & 1); x < W; x += 2) sbx.fillRect(x, y, 1, 1);
 
-function selectLoop(now) {
-  if (state !== 'select') return;
-  renderSelect(now);
-  if (chosenAt !== null && now - chosenAt > 700) {
-    chosenAt = null;
-    loadSave(hover);
-    return;
+
+// ---------- Characters (side view, facing right; the guy is ~25px, Mom ~32px) ----------
+const GUY_STAND = sprite([
+  '...kkkkk....',
+  '..kcCCcck...',
+  '.kcccccccBk.',
+  '.kBBBBBBBBk.',
+  '.kNNsssssk..',
+  '.kNSsswksk..',
+  '.kSsssssssk.',
+  '.kSsssskk...',
+  '..kSsssk....',
+  '...kssk.....',
+  '..kkrrrkk...',
+  '.krqqrrrRk..',
+  '.krqrkrrRk..',
+  '.krqrkrrRk..',
+  '.kssSkrrRk..',
+  '.ksskkrrRk..',
+  '..kkBGBBk...',
+  '..kbubbBk...',
+  '..kbukbBk...',
+  '..kbuk.kBk..',
+  '..kbuk.kBk..',
+  '..kbBk.kBk..',
+  '.kwwwkkwwwk.',
+  '.kGGGkkGGGk.',
+  '.kkkkkkkkkk.',
+]);
+const GUY_WALK = sprite([
+  '...kkkkk....',
+  '..kcCCcck...',
+  '.kcccccccBk.',
+  '.kBBBBBBBBk.',
+  '.kNNsssssk..',
+  '.kNSsswksk..',
+  '.kSsssssssk.',
+  '.kSsssskk...',
+  '..kSsssk....',
+  '...kssk.....',
+  '..kkrrrkk...',
+  '.krqqrrrRk..',
+  '.krqrkrrRk..',
+  '.krqrkrrRk..',
+  '.kssSkrrRk..',
+  '.ksskkrrRk..',
+  '..kkBGBBk...',
+  '..kbubbBk...',
+  '..kbukbBk...',
+  '.kbuk..kBk..',
+  '.kbuk..kbBk.',
+  'kbuk....kBk.',
+  'kwwwk..kwwwk',
+  'kGGGk..kGGGk',
+  'kkkkk..kkkkk',
+]);
+const GUY_SIT = sprite([
+  '....kkkkk.....',
+  '...kcCCcck....',
+  'kkkcccccccBk..',
+  '.kBBBBBBBBBk..',
+  '...kNssssNk...',
+  '...kwksswkk...',
+  '...kssssssk...',
+  '...kSskksSk...',
+  '....kSssSk....',
+  '.....kssk.....',
+  '...kkrrrrkk...',
+  '..krqqrrrrRk..',
+  '..krqrrrrrRk..',
+  '..ksRrrrrRsk..',
+  '..kskrrrrksk..',
+  '...kkBGBBkk...',
+  '.kkbubbbbbBkk.',
+  'kbubBk..kbbBBk',
+  '.kbuk....kbBk.',
+  '.kwwwk..kwwwk.',
+  '.kkkkk..kkkkk.',
+]);
+const MOM_STAND = sprite([
+  '....kkkkk.....',
+  '...knnnnnk....',
+  '..knNnnnnnk...',
+  '..knNnnnnnnk..',
+  '.knNnnssssk...',
+  '.knNnssssssk..',
+  '.knNnsswksk...',
+  '.knNnssssssk..',
+  '.knNnsssmmk...',
+  '.knNnkSsssk...',
+  '.knNnnkSsk....',
+  '.knNnkvvvvk...',
+  '.knNkvvVvvvk..',
+  '..knkvVvvvvk..',
+  '..kvvkVvvvvk..',
+  '..kvvkVvvvvk..',
+  '..kvVkvvvvvk..',
+  '..ksSkvvvvvk..',
+  '..ksskvvvvvk..',
+  '...kkgggggk...',
+  '...kgGggggk...',
+  '...kgGgkggk...',
+  '...kgGk.kgk...',
+  '...kgGk.kgk...',
+  '...kgGk.kgk...',
+  '...kgGk.kgk...',
+  '...kgGk.kgk...',
+  '...kgGk.kgk...',
+  '...kggk.kggk..',
+  '...kkkk.kkkkk.',
+  '..kNNNk.kNNNNk',
+  '..kkkkk.kkkkkk',
+]);
+const MOM_WALK = sprite([
+  '....kkkkk.....',
+  '...knnnnnk....',
+  '..knNnnnnnk...',
+  '..knNnnnnnnk..',
+  '.knNnnssssk...',
+  '.knNnssssssk..',
+  '.knNnsswksk...',
+  '.knNnssssssk..',
+  '.knNnsssmmk...',
+  '.knNnkSsssk...',
+  '.knNnnkSsk....',
+  '.knNnkvvvvk...',
+  '.knNkvvVvvvk..',
+  '..knkvVvvvvk..',
+  '..kvvkVvvvvk..',
+  '..kvvkVvvvvk..',
+  '..kvVkvvvvvk..',
+  '..ksSkvvvvvk..',
+  '..ksskvvvvvk..',
+  '...kkgggggk...',
+  '...kgGggggk...',
+  '...kgGgkggk...',
+  '..kgGk..kggk..',
+  '..kgGk..kggk..',
+  '.kgGk....kgk..',
+  '.kgGk....kggk.',
+  '.kgGk....kggk.',
+  'kgGk......kgk.',
+  'kggk......kggk',
+  'kkkkk....kkkkk',
+  'kNNNk....kNNNk',
+  'kkkkk....kkkkk',
+]);
+
+// ---------- Shared drawing helpers ----------
+// Pixel-exact filled shape with a 1px outline. `inside(px, py)` defines the shape.
+function shape(t, x0, y0, w, h, inside, fill, outline = '#101018') {
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    if (!inside(px, py)) continue;
+    const edge = !inside(px - 1, py) || !inside(px + 1, py) || !inside(px, py - 1) || !inside(px, py + 1);
+    t.fillStyle = edge ? outline : (typeof fill === 'function' ? fill(x0 + px, y0 + py) : fill);
+    t.fillRect(x0 + px, y0 + py, 1, 1);
   }
-  requestAnimationFrame(selectLoop);
+}
+// Box with clipped corners.
+function cbox(t, x0, y0, w, h, c, fill, outline) {
+  shape(t, x0, y0, w, h, (px, py) => inChamfer(px, py, w, h, c), fill, outline);
+}
+// Crayon-streak fills.
+const streak = (lo, mid, hi, k = 1.3) => (x, y) => {
+  const v = Math.sin(y * k + Math.sin(x * 0.15) * 1.5) + bayer(x, y) * 0.6;
+  return v > 0.6 ? hi : v < -0.6 ? lo : mid;
+};
+const LAVENDER = streak('#a8a0d8', '#c0b8e8', '#d8d0f4');
+const PEACH = streak('#f0b080', '#f8c8a0', '#ffd8b8');
+const MINT = streak('#70ff90', '#a0ffb8', '#c8ffd0');
+const WHITE = '#ffffff';
+
+const panelCache = new Map();
+function panel(w, h, fill, c = 4) {
+  const id = typeof fill === 'string' ? fill : (fill.id ??= Math.random().toString(36).slice(2));
+  const key = [w, h, c, id].join();
+  if (!panelCache.has(key)) {
+    const [pc, px] = makeCanvas(w, h);
+    cbox(px, 0, 0, w, h, c, fill);
+    panelCache.set(key, pc);
+  }
+  return panelCache.get(key);
+}
+
+const textCache = new Map();
+function textImg(str, opts) {
+  const key = str + '|' + JSON.stringify(opts);
+  if (!textCache.has(key)) textCache.set(key, renderText(str, opts));
+  return textCache.get(key);
+}
+// renderText pads by 3px; these place the glyphs themselves.
+const drawAt = (img, x, y) => ctx.drawImage(img, x - 3, y - 3);
+const drawCentered = (img, cx, y) => ctx.drawImage(img, Math.round(cx - (img.width - 6) / 2) - 3, y - 3);
+const INK = { rows: ['#101018'], outline: null };
+const DARK = { rows: ['#302858'], outline: null };
+const LIGHT = { rows: ['#ffffff', '#c8ffd0'] };
+
+// ---------- Name entry ----------
+const NAME_MAX = 8;
+let playerName = '', saveSlot = 0, confirmSel = 0;
+const nameTitleImg = renderText('SELECT YOUR NAME', LOGO);
+const NAME_BOX = [36, 50, 168, 44];
+const CONFIRM_BOX = [56, 102, 128, 50];
+const BUTTONS = [[70, 126, 44, 18], [126, 126, 44, 18]]; // YES, NO
+
+function renderName(now) {
+  ctx.drawImage(selectBg, 0, 0);
+  ctx.drawImage(nameTitleImg, Math.round((W - nameTitleImg.width) / 2), 4);
+  const [bx, by, bw, bh] = NAME_BOX;
+  ctx.drawImage(panel(bw, bh, LAVENDER), bx, by);
+  // One underline per letter; the next empty one blinks green.
+  const x0 = W / 2 - (NAME_MAX * 12 - 2) / 2;
+  for (let i = 0; i < NAME_MAX; i++) {
+    const next = state === 'name' && i === playerName.length && Math.floor(now / 400) % 2 === 0;
+    ctx.fillStyle = next ? '#30c858' : '#8078b8';
+    ctx.fillRect(x0 + i * 12, by + 32, 10, 2);
+  }
+  if (playerName) drawAt(textImg(playerName, { scale: 2, gap: 2, rows: ['#302858'], outline: null }), x0, by + 14);
+
+  if (state === 'confirm') {
+    const [cx, cy, cw, ch] = CONFIRM_BOX;
+    ctx.drawImage(panel(cw, ch, LAVENDER), cx, cy);
+    drawCentered(textImg('ARE YOU SURE?', DARK), W / 2, cy + 8);
+    ['YES', 'NO'].forEach((label, i) => {
+      const [x, y, w, h] = BUTTONS[i];
+      ctx.drawImage(panel(w, h, i === confirmSel ? MINT : PEACH), x, y);
+      drawCentered(textImg(label, DARK), x + w / 2, y + 6);
+    });
+  } else {
+    drawCentered(textImg('TYPE YOUR NAME, THEN PRESS ENTER', LIGHT), W / 2, 104);
+  }
+}
+
+function nameKey(e) {
+  if (/^Key[A-Z]$/.test(e.code)) { if (playerName.length < NAME_MAX) playerName += e.code[3]; }
+  else if (e.code === 'Space') {
+    if (playerName && !playerName.endsWith(' ') && playerName.length < NAME_MAX) playerName += ' ';
+  }
+  else if (e.code === 'Backspace') playerName = playerName.slice(0, -1);
+  else if (e.code === 'Enter') {
+    if (e.repeat || !playerName.trim()) return;
+    playerName = playerName.trim();
+    confirmSel = 0;
+    state = 'confirm';
+  }
+  else if (e.code === 'Escape') { playerName = ''; state = 'select'; }
+  else return;
+  e.preventDefault();
+}
+
+function confirmKey(e) {
+  if (e.repeat) return;
+  switch (e.code) {
+    case 'ArrowLeft': case 'ArrowRight': case 'KeyA': case 'KeyD': confirmSel = 1 - confirmSel; break;
+    case 'KeyY': confirmSel = 0; answerConfirm(); break;
+    case 'KeyN': case 'Escape': confirmSel = 1; answerConfirm(); break;
+    case 'Enter': case 'Space': answerConfirm(); break;
+    default: return;
+  }
+  e.preventDefault();
+}
+function answerConfirm() {
+  canvas.style.cursor = 'default';
+  if (confirmSel === 0) startCutscene();
+  else state = 'name';
+}
+
+// ---------- Living room level (laid out exactly like the hand-drawn map) ----------
+// Drawn in the style and zoom of Metroid Fusion: 4-tone shaded materials with dark outlines,
+// detailed wall paneling, a bright-edged floor, ~40px characters. The room is a bit wider than
+// the screen, so the camera scrolls. Platforming works like Prehistoric Peril.
+const FLOOR_Y = 136, LEVEL_W = 290;
+const EXIT_X = 268;               // the yellow box: the exit to town, locked for now
+// Shaded material ramps: [darkest, shadow, base, light].
+const RAMP = {
+  wood:   ['#3a1a0c', '#6a3418', '#93502a', '#c07440'],
+  unit:   ['#4a2210', '#8a4824', '#b06838', '#d89060'],
+  door:   ['#4a1c0c', '#82361a', '#b45428', '#e07c44'],
+  black:  ['#06060a', '#14141c', '#262632', '#4a4a5c'],
+  green:  ['#24401a', '#44702a', '#6c9c3a', '#a8d068'],
+  metal:  ['#141c2c', '#2c405a', '#56789a', '#a8c8e0'],
+  yellow: ['#5a4208', '#a07c10', '#e0b828', '#fff07a'],
+};
+// Fill that shades a box like Fusion sprites: light top/left edge, dark bottom/right, dithered body.
+function bevel(ramp, x0, y0, w, h) {
+  return (x, y) => {
+    const lx = x - x0, ly = y - y0;
+    if (ly <= 1) return ramp[3];
+    if (lx <= 1) return ramp[3];
+    if (ly >= h - 3 || lx >= w - 3) return ramp[0];
+    if (ly >= h - 5 || lx >= w - 5) return ramp[1];
+    return bayer(x, y) + Math.sin(x * 0.7 + y * 0.2) * 0.2 > 0.35 ? ramp[1] : ramp[2];
+  };
+}
+const shadedBox = (ramp, x, y, w, h, c = 1) => cbox(rbx, x, y, w, h, c, bevel(ramp, x, y, w, h));
+
+const [levelBg, rbx] = makeCanvas(LEVEL_W, H);
+{
+  const put = (x, y, c) => { rbx.fillStyle = c; rbx.fillRect(x, y, 1, 1); };
+  // Upper wall: dark striped wallpaper, shadowed toward the ceiling.
+  for (let y = 0; y < 98; y++) for (let x = 0; x < LEVEL_W; x++) {
+    const stripe = x % 10;
+    let c = stripe === 0 ? '#4a2410' : stripe === 1 ? '#a8603a' : (x + y) % 20 < 2 && y % 10 === 5 ? '#8a4c28' : '#7a4020';
+    if (y < 24 && bayer(x, y) > y / 24 - 0.5) c = y < 8 ? '#24100a' : '#4a2410';
+    put(x, y, c);
+  }
+  // Crown molding and chair rail.
+  for (let x = 0; x < LEVEL_W; x++) {
+    put(x, 0, '#101018'); put(x, 1, '#c07440'); put(x, 2, '#6a3418'); put(x, 3, '#101018');
+    put(x, 97, '#101018'); put(x, 98, '#e09858'); put(x, 99, '#b06838'); put(x, 100, '#6a3418'); put(x, 101, '#101018');
+  }
+  // Wainscot panels below the rail.
+  rbx.fillStyle = '#3a1a0c'; rbx.fillRect(0, 102, LEVEL_W, 29);
+  for (let px = 0; px < LEVEL_W; px += 24) shadedBox(['#3a1a0c', '#5a2c14', '#7a3e1e', '#a05a30'], px + 2, 104, 20, 26, 1);
+  // Baseboard.
+  for (let x = 0; x < LEVEL_W; x++) {
+    put(x, 131, '#101018'); put(x, 132, '#a05a30');
+    for (let y = 133; y < FLOOR_Y; y++) put(x, y, '#4a2210');
+  }
+  // Floor: bright top edge (Fusion style), then staggered planks darkening toward the bottom.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < LEVEL_W; x++) {
+    const ry = y - FLOOR_Y, row = Math.floor((ry - 2) / 6);
+    let c;
+    if (ry === 0) c = '#f0b878';
+    else if (ry === 1) c = '#101018';
+    else if ((ry - 2) % 6 === 5 || (x + row * 29) % 48 === 0) c = '#24100a';
+    else if ((ry - 2) % 6 === 0) c = '#b06838';
+    else c = bayer(x, y) * 1.2 > (ry - 2) / 22 - 0.1 ? '#7a3e1e' : '#5a2c14';
+    put(x, y, c);
+  }
+
+  // Tall wall unit with two upper cabinet doors (from the drawing).
+  shadedBox(RAMP.unit, 29, 34, 55, FLOOR_Y - 34, 0);
+  shadedBox(RAMP.wood, 33, 37, 21, 52, 1);
+  shadedBox(RAMP.wood, 56, 47, 24, 39, 1);
+  put(50, 62, '#f8d080'); put(50, 63, '#a07c10'); put(59, 66, '#f8d080'); put(59, 67, '#a07c10');
+
+  // Door on the left, arched top.
+  const dx = 14, dy = 90, dw = 26, dh = FLOOR_Y - dy, r = dw / 2;
+  shape(rbx, dx, dy, dw, dh,
+    (px, py) => px >= 0 && px < dw && py >= 0 && py < dh && (py >= r || (px - r + 0.5) ** 2 + (py - r) ** 2 <= r * r),
+    bevel(RAMP.door, dx, dy, dw, dh));
+  cbox(rbx, dx + 5, dy + 14, dw - 10, 12, 1, bevel(RAMP.door, dx + 5, dy + 14, dw - 10, 12));
+  cbox(rbx, dx + 5, dy + 29, dw - 10, 13, 1, bevel(RAMP.door, dx + 5, dy + 29, dw - 10, 13));
+  put(dx + 21, 114, '#fff07a'); put(dx + 22, 114, '#e0b828'); put(dx + 21, 115, '#a07c10'); put(dx + 22, 115, '#5a4208');
+
+  // Counter next to the door: black top, black cabinet on the right, wooden legs.
+  shadedBox(RAMP.wood, 62, 123, 3, FLOOR_Y - 123, 0);
+  shadedBox(RAMP.wood, 80, 123, 3, FLOOR_Y - 123, 0);
+  shadedBox(RAMP.black, 62, 104, 21, 20, 1);
+  shadedBox(RAMP.black, 41, 96, 43, 10, 1);
+  for (let x = 66; x < 79; x++) put(x, 112, '#6a6a80');
+
+  // Stool, coffee table, footstool.
+  shadedBox(RAMP.wood, 92, 120, 9, 4, 1);
+  shadedBox(RAMP.wood, 93, 123, 3, FLOOR_Y - 123, 0);
+  shadedBox(RAMP.wood, 97, 123, 3, FLOOR_Y - 123, 0);
+  shadedBox(RAMP.wood, 111, 122, 4, FLOOR_Y - 122, 0);
+  shadedBox(RAMP.wood, 147, 122, 4, FLOOR_Y - 122, 0);
+  shadedBox(RAMP.wood, 108, 118, 46, 6, 1);
+  shadedBox(RAMP.wood, 156, 129, 11, FLOOR_Y - 129, 1);
+
+  // Green armchair couch.
+  shadedBox(RAMP.green, 175, 92, 48, 30, 6);
+  shadedBox(RAMP.green, 172, 119, 54, FLOOR_Y - 119, 2);
+  shadedBox(RAMP.green, 178, 116, 43, 7, 2);
+  shadedBox(RAMP.green, 167, 106, 12, FLOOR_Y - 106, 4);
+  shadedBox(RAMP.green, 219, 106, 12, FLOOR_Y - 106, 4);
+  // Soft shadows on the floor under furniture.
+  rbx.globalAlpha = 0.35; rbx.fillStyle = '#000';
+  rbx.fillRect(170, FLOOR_Y + 2, 60, 3); rbx.fillRect(108, FLOOR_Y + 2, 46, 2); rbx.fillRect(29, FLOOR_Y + 2, 55, 3);
+  rbx.globalAlpha = 1;
+
+  // Exit to town (the yellow box): a normal front door in a wooden frame. Locked for now.
+  shadedBox(RAMP.wood, EXIT_X - 2, 84, LEVEL_W - EXIT_X + 6, FLOOR_Y - 84, 0);
+  shadedBox(['#5a4208', '#a07c10', '#d8b040', '#f8e080'], EXIT_X + 2, 88, LEVEL_W - EXIT_X + 2, FLOOR_Y - 88, 0);
+  const pw = 7, ph = 18;
+  for (const [px, py] of [[EXIT_X + 5, 92], [EXIT_X + 14, 92], [EXIT_X + 5, 113], [EXIT_X + 14, 113]])
+    cbox(rbx, px, py, pw, ph, 1, bevel(['#5a4208', '#a07c10', '#d8b040', '#f8e080'], px, py, pw, ph));
+  put(EXIT_X + 4, 112, '#fff07a'); put(EXIT_X + 5, 112, '#e0b828'); put(EXIT_X + 4, 113, '#a07c10'); put(EXIT_X + 5, 113, '#5a4208');
+}
+
+const PLATFORMS = [
+  { x: 0, y: FLOOR_Y, w: LEVEL_W },   // floor
+  { x: 41, y: 96, w: 43 },            // black counter
+  { x: 92, y: 120, w: 9 },            // stool
+  { x: 108, y: 118, w: 46 },          // coffee table
+  { x: 156, y: 129, w: 11 },          // footstool
+  { x: 167, y: 106, w: 12 },          // couch arms
+  { x: 219, y: 106, w: 12 },
+  { x: 178, y: 116, w: 43 },          // couch seat
+  { x: 175, y: 92, w: 48 },           // top of the couch back
+];
+
+
+function drawChar(img, x, footY, flip) {
+  ctx.save();
+  ctx.translate(Math.round(x - camX), Math.round(footY));
+  ctx.scale(flip ? -1 : 1, 1);
+  ctx.drawImage(img, -Math.floor(img.width / 2), -img.height);
+  ctx.restore();
+}
+
+function wrapText(text, max) {
+  const lines = [];
+  for (const word of text.split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && (last + ' ' + word).length <= max) lines[lines.length - 1] = last + ' ' + word;
+    else lines.push(word);
+  }
+  return lines;
+}
+
+// Prehistoric Peril-style caption: dark see-through box at the top, gold text, speaker on top.
+const GOLD = { rows: ['#fff0a0', '#f8d040', '#e0a820'], outline: '#000000' };
+function drawCaption(speaker, text, shown) {
+  const lines = wrapText(text, 34);
+  const w = W - 16, h = lines.length * 10 + 20;
+  ctx.globalAlpha = 0.72;
+  ctx.drawImage(panel(w, h, '#06060e', 4), 8, 4);
+  ctx.globalAlpha = 1;
+  drawAt(textImg(speaker, { rows: ['#ffffff', '#c8ffd0'], outline: '#000000' }), 16, 9);
+  let offset = 0;
+  lines.forEach((line, i) => {
+    const n = Math.max(0, Math.min(line.length, shown - offset));
+    offset += line.length + 1;
+    if (!n) return;
+    const img = textImg(line, GOLD);
+    ctx.drawImage(img, 0, 0, 3 + n * 6, img.height, 16 - 3, 20 + i * 10 - 3, 3 + n * 6, img.height);
+  });
+}
+
+// Metroid Fusion-style minimap in the corner.
+function drawHUD(now) {
+  // Minimap: this room (lit) and the town beyond the locked exit.
+  const mx = W - 30, my = 2;
+  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 30, 14);
+  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 28, 12);
+  ctx.fillStyle = '#e858a8'; ctx.fillRect(mx + 2, my + 3, 14, 6);
+  ctx.fillStyle = '#304890'; ctx.fillRect(mx + 18, my + 3, 8, 6);
+  ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 16, my + 5, 2, 2);
+  if (Math.floor(now / 300) % 2) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(mx + 3 + Math.round(player.x / LEVEL_W * 12), my + 5, 2, 2);
+  }
+}
+
+// ---------- Particles (dust puffs, sparks) ----------
+let particles = [];
+function burst(x, y, colors, n, speed = 40) {
+  for (let i = 0; i < n; i++) particles.push({
+    x, y, vx: (Math.random() - 0.5) * speed * 2, vy: -Math.random() * speed,
+    c: colors[i % colors.length], life: 0.5 + Math.random() * 0.3,
+  });
+}
+function updateParticles(dt) {
+  for (const q of particles) { q.vy += 200 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
+  particles = particles.filter(q => q.life > 0);
+}
+function drawParticles() {
+  for (const q of particles) {
+    if (q.life < 0.15 && Math.floor(q.life * 40) % 2) continue; // flicker out
+    ctx.fillStyle = q.c;
+    ctx.fillRect(Math.round(q.x - camX), Math.round(q.y), 1, 1);
+  }
+}
+const DUST = ['#f0b878', '#c07440', '#ffe0b0'];
+
+// ---------- Cutscene (plays itself; any key skips) then platforming ----------
+const COUCH_X = 199, MOM_STOP = 128;
+const WALK_SPEED = 38, RUN_SPEED = 72, GRAVITY = 820, JUMP_VEL = -290;
+let cut, player, mom, camX = 0, held = new Set(), hintUntil = 0, fadeInT = 0;
+
+function makePlayer() {
+  return { x: COUCH_X, y: FLOOR_Y, vx: 0, vy: 0, onGround: true, sitting: true, flip: false,
+           walkT: 0, hp: 5, maxHp: 5, hurtT: 0 };
+}
+
+function startCutscene() {
+  state = 'cutscene';
+  camX = 0;
+  particles = [];
+  cut = { phase: 'fade', t: 0, speaker: '', text: '', shown: 0, hold: 0 };
+  player = makePlayer();
+  mom = { x: -10, y: FLOOR_Y, flip: false, walkT: 0, moving: false };
+}
+
+function say(speaker, text, hold) {
+  Object.assign(cut, { phase: 'talk', speaker, text, shown: 0, hold, t: 0 });
+}
+
+// Hand control to the player (end of cutscene, or skipped).
+function beginPlay() {
+  state = 'play';
+  cut.phase = 'done';
+  player.sitting = false;
+  player.y = FLOOR_Y;
+  player.vy = JUMP_VEL * 0.5;        // hops off the couch
+  player.onGround = false;
+  burst(player.x, FLOOR_Y, DUST, 6, 25);
+  if (mom) { mom.x = Math.max(mom.x, 40); mom.leaving = true; }
+  fadeInT = 0.4;
+  hintUntil = performance.now() + 4500;
+}
+
+function updateCutscene(dt) {
+  cut.t += dt;
+  if (cut.phase === 'fade' && cut.t > 0.8) { cut.phase = 'momIn'; cut.t = 0; }
+  else if (cut.phase === 'momIn') {
+    mom.x += WALK_SPEED * dt; mom.walkT += dt; mom.moving = true;
+    if (mom.x >= MOM_STOP) {
+      mom.x = MOM_STOP; mom.moving = false;
+      say('MOM', `HEY ${playerName}, WHY DON'T YOU GET OFF YOUR BUTT AND TAKE OUT THE TRASH?`, 2.5);
+    }
+  } else if (cut.phase === 'talk') {
+    mom.moving = false;
+    cut.shown = Math.min(cut.text.length, cut.t * 30);
+    if (cut.shown >= cut.text.length && cut.t > cut.text.length / 30 + cut.hold) {
+      if (cut.speaker === 'MOM') say(playerName, 'OK MOM', 1.4);
+      else { cut.phase = 'outro'; cut.t = 0; }
+    }
+  } else if (cut.phase === 'outro' && cut.t > 0.5) beginPlay();
+}
+
+function hurt(dir) {
+  player.hp -= 1;
+  player.hurtT = 1.2;
+  player.vx = dir * 120;
+  player.vy = -180;
+  player.onGround = false;
+  burst(player.x, player.y - 20, ['#ff4040', '#f8a040', '#ffffff'], 10, 60);
+  if (player.hp <= 0) {
+    // Back to the couch with full hearts.
+    Object.assign(player, { x: COUCH_X, y: FLOOR_Y, vx: 0, vy: 0, hp: player.maxHp, hurtT: 1.5 });
+    fadeInT = 0.4;
+  }
+}
+
+function updatePlay(dt) {
+  const p = player;
+  const left = held.has('ArrowLeft'), right = held.has('ArrowRight');
+  if (p.hurtT > 0.9) { /* knocked back: no control for a moment */ }
+  else if (left && !right) { p.vx = -RUN_SPEED; p.flip = true; }
+  else if (right && !left) { p.vx = RUN_SPEED; p.flip = false; }
+  else p.vx *= Math.pow(0.65, dt * 60);
+  if (held.has('ArrowUp') && p.onGround) {
+    p.vy = JUMP_VEL;
+    p.onGround = false;
+    burst(p.x, p.y, DUST, 5, 25);
+  }
+  p.hurtT = Math.max(0, p.hurtT - dt);
+
+  p.vy += GRAVITY * dt;
+  const prevY = p.y;
+  // The door to town is locked, so it works as a wall.
+  p.x = Math.max(6, Math.min(EXIT_X - 6, p.x + p.vx * dt));
+  p.y += p.vy * dt;
+  const wasOnGround = p.onGround;
+  p.onGround = false;
+  if (p.vy >= 0) {
+    // Land on the highest one-way platform we crossed this frame.
+    let best = null;
+    for (const pl of PLATFORMS)
+      if (p.x + 3 > pl.x && p.x - 3 < pl.x + pl.w && prevY <= pl.y + 0.5 && p.y >= pl.y && (!best || pl.y < best.y)) best = pl;
+    if (best) {
+      p.y = best.y;
+      if (!wasOnGround && p.vy > 150) burst(p.x, p.y, DUST, 4, 25);
+      p.vy = 0;
+      p.onGround = true;
+    }
+  }
+  if (p.onGround && Math.abs(p.vx) > 5) p.walkT += dt;
+
+
+  if (mom && mom.leaving) {
+    mom.x -= WALK_SPEED * dt; mom.walkT += dt; mom.moving = true; mom.flip = true;
+    if (mom.x < 27) mom = null;     // out through the door
+  }
+
+  // Camera: follow with a lead, eased, clamped to the level.
+  const target = Math.max(0, Math.min(LEVEL_W - W, p.x - W * 0.35));
+  camX += (target - camX) * (1 - Math.pow(0.9, dt * 60));
+}
+
+function renderLevel(now) {
+  const cx = Math.round(camX);
+  ctx.drawImage(levelBg, cx, 0, W, H, 0, 0, W, H);
+  const chars = [];
+  if (mom) chars.push({ img: mom.moving && Math.floor(mom.walkT / 0.15) % 2 ? MOM_WALK : MOM_STAND, ...mom });
+  const p = player;
+  const blinking = p.hurtT > 0 && Math.floor(p.hurtT * 12) % 2;
+  if (!blinking) {
+    const img = p.sitting ? GUY_SIT : !p.onGround || (Math.abs(p.vx) > 5 && Math.floor(p.walkT / 0.12) % 2) ? GUY_WALK : GUY_STAND;
+    chars.push({ img, ...p, y: p.sitting ? FLOOR_Y - 4 : p.y });
+  }
+  chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
+  drawParticles();
+
+  if (state === 'cutscene') {
+    if (cut.phase === 'talk') drawCaption(cut.speaker, cut.text, Math.floor(cut.shown));
+    ctx.globalAlpha = 0.6;
+    drawCentered(textImg('PRESS ANY KEY TO SKIP', { rows: ['#c8a862'], outline: '#000000' }), W / 2, 150);
+    ctx.globalAlpha = 1;
+    // Stepped fades in and out of black.
+    const fade = cut.phase === 'fade' ? 1 - cut.t / 0.8 : cut.phase === 'outro' ? cut.t / 0.5 : 0;
+    if (fade > 0) {
+      ctx.globalAlpha = Math.min(1, Math.ceil(fade * 4) / 4);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  } else {
+    drawHUD(now);
+    if (now < hintUntil) drawCentered(textImg('ARROWS: MOVE   UP: JUMP', GOLD), W / 2, 30);
+    if (fadeInT > 0) {
+      ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function updateLevel(dt) {
+  if (state === 'cutscene') updateCutscene(dt);
+  else updatePlay(dt);
+  fadeInT = Math.max(0, fadeInT - dt);
+  updateParticles(dt);
 }
 
 function loadSave(i) {
-  state = 'loading';
+  saveSlot = i;
+  hover = -1;
   canvas.style.cursor = 'default';
-  // TODO: hand off to the first level here, using save slot i.
+  playerName = '';
+  state = 'name';
 }
 
 // ---------- Screen flow ----------
@@ -523,7 +1164,6 @@ function start() {
       requestAnimationFrame(dive);
     } else {
       state = 'select';
-      requestAnimationFrame(selectLoop);
     }
   })(t0);
 }
@@ -535,30 +1175,80 @@ function backToTitle() {
   render();
 }
 
-addEventListener('keydown', e => {
-  if (state === 'title' && e.code === 'Space') { e.preventDefault(); start(); }
-  else if (state === 'select' && chosenAt === null && e.code === 'Escape') backToTitle();
-});
+// One loop drives every screen after the title.
+let lastFrame = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
+  lastFrame = now;
+  if (state === 'select') {
+    renderSelect(now);
+    if (chosenAt !== null && now - chosenAt > 700) {
+      chosenAt = null;
+      loadSave(hover);
+    }
+  } else if (state === 'name' || state === 'confirm') {
+    renderName(now);
+  } else if (state === 'cutscene' || state === 'play') {
+    updateLevel(dt);
+    renderLevel(now);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 
-// Save slots are picked with the mouse.
-function slotAt(e) {
+addEventListener('keydown', e => {
+  if (state === 'title') { if (e.code === 'Space') { e.preventDefault(); start(); } }
+  else if (state === 'select') { if (chosenAt === null && e.code === 'Escape') backToTitle(); }
+  else if (state === 'name') nameKey(e);
+  else if (state === 'confirm') confirmKey(e);
+  else if (state === 'cutscene') {
+    // Any key skips, like Prehistoric Peril. Arrows still count as held so you can move right away.
+    if (!e.repeat && cut.phase !== 'outro') { e.preventDefault(); beginPlay(); }
+    if (e.code.startsWith('Arrow')) held.add(e.code);
+  } else if (state === 'play') {
+    if (e.code.startsWith('Arrow')) { e.preventDefault(); held.add(e.code); }
+  }
+});
+addEventListener('keyup', e => held.delete(e.code));
+addEventListener('blur', () => held.clear());
+
+function canvasPoint(e) {
   const r = canvas.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
-  return SLOTS.findIndex(([sx, sy]) => x >= sx && x < sx + SLOT_W && y >= sy && y < sy + SLOT_H);
+  return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
+}
+const within = ([x, y], [bx, by, bw, bh]) => x >= bx && x < bx + bw && y >= by && y < by + bh;
+
+// Save slots and the YES/NO buttons are picked with the mouse.
+function slotAt(e) {
+  const pt = canvasPoint(e);
+  return SLOTS.findIndex(([sx, sy]) => within(pt, [sx, sy, SLOT_W, SLOT_H]));
+}
+function buttonAt(e) {
+  const pt = canvasPoint(e);
+  return BUTTONS.findIndex(b => within(pt, b));
 }
 canvas.addEventListener('mousemove', e => {
-  if (state !== 'select' || chosenAt !== null) return;
-  hover = slotAt(e);
-  canvas.style.cursor = hover >= 0 ? 'pointer' : 'default';
+  if (state === 'select' && chosenAt === null) {
+    hover = slotAt(e);
+    canvas.style.cursor = hover >= 0 ? 'pointer' : 'default';
+  } else if (state === 'confirm') {
+    const b = buttonAt(e);
+    if (b >= 0) confirmSel = b;
+    canvas.style.cursor = b >= 0 ? 'pointer' : 'default';
+  }
 });
 canvas.addEventListener('mouseleave', () => {
   if (state === 'select' && chosenAt === null) hover = -1;
 });
 canvas.addEventListener('click', e => {
   if (state === 'title') return start();
-  if (state !== 'select' || chosenAt !== null) return;
-  hover = slotAt(e);
-  if (hover >= 0) chosenAt = performance.now();
+  if (state === 'select' && chosenAt === null) {
+    hover = slotAt(e);
+    if (hover >= 0) chosenAt = performance.now();
+  } else if (state === 'confirm') {
+    const b = buttonAt(e);
+    if (b >= 0) { confirmSel = b; answerConfirm(); }
+  } else if (state === 'cutscene' && cut.phase !== 'outro') beginPlay();
 });
 </script>
 </body>
