@@ -1637,6 +1637,36 @@ const doc = { room: 'town3', x: 840, flip: false, walkT: 0, moving: false };
 // ---------- The lab: a building at the end of the third street, and its inside ----------
 const STEEL = ['#2a3448', '#4a5670', '#7080a0', '#a0b0d0'];
 const HATCH = ['#0c1c4a', '#1c3a82', '#2c5ab4', '#5a88e0'];
+// A tunnel at the edge of a room: a roof beam and pillar at the opening, ribbed
+// walls inside, and bright light at the far end so you never see where it stops.
+const TUNNEL_W = 34, TUNNEL_H = 46;
+function drawTunnel(g, x0, floorY, lightOnRight) {
+  const put = (x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
+  const top = floorY - TUNNEL_H;
+  for (let y = top; y < floorY; y++) for (let i = 0; i < TUNNEL_W; i++) {
+    const t = i / (TUNNEL_W - 1);                        // 0 at the opening, 1 at the light
+    const x = lightOnRight ? x0 + i : x0 + TUNNEL_W - 1 - i;
+    let c = t < 0.35 ? '#0c1018' : t < 0.6 ? '#161c2a' : '#2a3448';
+    if (i % 8 === 3 && t < 0.75) c = '#06080e';          // ribs
+    else if (i % 8 === 4 && t < 0.75) c = '#3a4864';
+    if (y === top + 2 && i % 6 === 1 && t < 0.8) c = '#40e0ff';   // little ceiling lights
+    if (bayer(x, y) + 0.5 < (t - 0.55) * 3) c = t > 0.85 ? '#ffffff' : '#fff4c8';
+    put(x, y, c);
+  }
+  // Roof beam across the top and a pillar at the opening.
+  const ox = lightOnRight ? x0 - 5 : x0 + TUNNEL_W - 1;
+  shadedBox(STEEL, lightOnRight ? x0 - 5 : x0, top - 7, TUNNEL_W + 5, 7, 0, g);
+  shadedBox(STEEL, ox, top - 1, 6, TUNNEL_H + 1, 0, g);
+  for (let i = 0; i < TUNNEL_W + 5; i += 4) put((lightOnRight ? x0 - 5 : x0) + i + 1, top - 4, '#f8d040');
+}
+// Soft light from the tunnel's far end, spilling into the room.
+function drawTunnelLight(edgeX, floorY) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.13;
+  ctx.drawImage(spotLight, Math.round(edgeX - camX) - SPOT_LIGHT_R, floorY - FLOOR_Y);
+  ctx.restore();
+}
 const LAB_X0 = 966, LAB_BW = 160, LAB_BH = 128;        // big building on the street (roof gear included)
 const LAB_DOOR_X = 988, LAB_DOOR_W = 20, LAB_DOOR_H = 36;
 let labDoorT = 0;                                         // 0 shut, 1 slid open
@@ -1707,7 +1737,7 @@ function drawLabWallFront() {
   ctx.drawImage(labOut, cut, 0, LAB_BW - cut, LAB_BH, Math.round(LAB_X0 + cut - camX), FLOOR_Y - LAB_BH, LAB_BW - cut, LAB_BH);
 }
 
-const LAB_W = 352, LAB_IN_DOOR_X = 16, LAB_NEXT_DOOR_X = 336;
+const LAB_W = 352, LAB_IN_DOOR_X = 16, LAB_NEXT_DOOR_X = LAB_W - 8;   // the tunnel to lab room 2 is at the far right
 const [labBg, lbx] = makeCanvas(LAB_W, H);
 {
   const put = (x, y, c) => { lbx.fillStyle = c; lbx.fillRect(x, y, 1, 1); };
@@ -1787,6 +1817,7 @@ const [labBg, lbx] = makeCanvas(LAB_W, H);
   sb(STEEL, RX - 22, FLOOR_Y - 16, 44, 16, 1);
   put(RX - 8, FLOOR_Y - 9, '#ff3030'); put(RX - 7, FLOOR_Y - 9, '#ff3030');
   put(RX + 6, FLOOR_Y - 9, '#40e040'); put(RX + 7, FLOOR_Y - 9, '#40e040');
+  drawTunnel(lbx, LAB_W - TUNNEL_W, FLOOR_Y, true);       // on to lab room 2
 }
 const LAB_PLATFORMS = [
   { x: 0, y: FLOOR_Y, w: LAB_W },
@@ -1890,6 +1921,7 @@ const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
     const ry = y - LAB2_FLOOR;
     put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : (x % 6 === 0 || ry % 6 === 1) ? '#22293a' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
   }
+  drawTunnel(l2x, 0, LAB2_FLOOR, false);                   // back to the first lab room
   // Console in the bottom-left corner: a round dial and a row of lights.
   const cx0 = 32, cw = 62, ctop = LAB2_FLOOR - 40;
   sb(STEEL, cx0, ctop, cw, 40, 1);
@@ -2214,9 +2246,8 @@ function drawTeleBeam(now) {
   }
 }
 
-// The way between the two lab rooms: a bright glowing doorway on the wall,
-// like the open front door at home, with soft light spilling out around it.
-const SPOT_W = 20, SPOT_H = 48, SPOT_LIGHT_R = 70;
+// Soft light like the open front door at home (used at the lab tunnels).
+const SPOT_LIGHT_R = 70;
 const [spotLight, slx] = makeCanvas(SPOT_LIGHT_R * 2, H);
 for (let y = 0; y < H; y++) for (let x = 0; x < SPOT_LIGHT_R * 2; x++) {
   const across = Math.max(0, 1 - Math.abs(x - SPOT_LIGHT_R) / SPOT_LIGHT_R) ** 2;
@@ -2224,19 +2255,6 @@ for (let y = 0; y < H; y++) for (let x = 0; x < SPOT_LIGHT_R * 2; x++) {
   let k = across * (0.35 + fromDoor * 0.75);
   if (y > FLOOR_Y && Math.abs(x - SPOT_LIGHT_R) < SPOT_LIGHT_R * 0.55) k += 0.25 * across;   // bright patch on the floor
   if (bayer(x, y) + 0.5 < k * 0.9) { slx.fillStyle = k > 0.7 ? '#fff8e0' : '#ffe8a8'; slx.fillRect(x, y, 1, 1); }
-}
-function drawGlowSpot(wx, floorY) {
-  const cx = Math.round(wx - camX), x0 = cx - SPOT_W / 2, y0 = floorY - SPOT_H;
-  for (let y = 0; y < SPOT_H; y++) for (let x = 0; x < SPOT_W; x++) {
-    const edge = Math.min(x, y, SPOT_W - 1 - x);
-    ctx.fillStyle = edge > 2 || bayer(x, y) + 0.5 < edge / 3 ? '#ffffff' : '#fff4c8';
-    ctx.fillRect(x0 + x, y0 + y, 1, 1);
-  }
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.13;
-  ctx.drawImage(spotLight, cx - SPOT_LIGHT_R, floorY - FLOOR_Y);
-  ctx.restore();
 }
 
 // ---------- Floating people (third neighborhood) ----------
@@ -2306,11 +2324,11 @@ const ROOMS = {
   town:    { bg: townBg,    w: TOWN_W,    platforms: TOWN_PLATFORMS,    rightWall: TOWN_W - 6,  right: 'town2' },
   town2:   { bg: town2Bg,   w: TOWN2_W,   platforms: TOWN2_PLATFORMS,   rightWall: TOWN2_W - 6, left: 'town', right: 'town3' },
   town3:   { bg: town3Bg,   w: TOWN3_W,   platforms: TOWN3_PLATFORMS,   rightWall: TOWN3_W - 6, left: 'town2' },
-  lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6 },
+  lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6, right: 'lab2' },
   tele:    { bg: teleBg,    w: TELE_W,    platforms: TELE_PLATFORMS,    rightWall: TELE_W - 6 },
   shop:    { bg: shopBg,    w: SHOP_W,    platforms: SHOP_PLATFORMS,    rightWall: SHOP_W - 6 },
   repair:  { bg: repairBg,  w: REPAIR_W,  platforms: REPAIR_PLATFORMS,  rightWall: REPAIR_W - 6 },
-  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR },
+  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR, left: 'lab' },
 };
 let room = 'living';
 const curRoom = () => ROOMS[room];
@@ -2440,8 +2458,6 @@ const INTERACTABLES = [
       if (labTalked) { sfx.locked(); showToast("IT'S NOT SAFE OUT THERE."); }
       else goThrough('town3', LAB_DOOR_X - 10, true);
     } },
-  { room: 'lab', x: () => LAB_NEXT_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
-    use: () => goThrough('lab2', LAB_IN_DOOR_X + 18, false) },
   { room: 'lab2', x: () => LAB2_REPAIR_X, y: LAB2_REPAIR_Y, iconY: LAB2_REPAIR_Y - 46, active: () => true,
     use: () => goThrough('repair', REPAIR_DOOR_X + 18, false) },
   { room: 'lab2', x: () => LAB2_SHOP_X, y: LAB2_SHOP_Y, iconY: LAB2_SHOP_Y - 46, active: () => true,
@@ -2454,8 +2470,6 @@ const INTERACTABLES = [
     use: () => goThrough('lab2', LAB2_TELE_X, false, true, LAB2_TELE_Y) },
   { room: 'repair', x: () => REPAIR_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
     use: () => goThrough('lab2', LAB2_REPAIR_X, false, true, LAB2_REPAIR_Y) },
-  { room: 'lab2', x: () => LAB_IN_DOOR_X, y: LAB2_FLOOR, iconY: LAB2_FLOOR - 52, active: () => true,
-    use: () => goThrough('lab', LAB_NEXT_DOOR_X - 14, true) },
   { room: 'alley', x: () => ALLEY_DOOR_X, y: FLOOR_Y, iconY: 76, active: () => true,
     use: () => goThrough('living', LIVING_DOOR_X, false) },
 ];
@@ -2759,8 +2773,8 @@ function renderLevel(now) {
   if (room === 'town3') { drawFloaters(); drawLabOutside(); drawSci(); }
   if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.push({ img: DOC_LOOKS[look], x, y, flip });
   if (room === 'tele') drawTeleBeam(now);
-  if (room === 'lab') drawGlowSpot(LAB_NEXT_DOOR_X, FLOOR_Y);
-  if (room === 'lab2') drawGlowSpot(LAB_IN_DOOR_X, LAB2_FLOOR);
+  if (room === 'lab') drawTunnelLight(LAB_W, FLOOR_Y);
+  if (room === 'lab2') drawTunnelLight(0, LAB2_FLOOR);
   if (room === 'repair') drawRepairShop();
   else if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
   chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
