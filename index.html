@@ -2133,6 +2133,97 @@ const SHOP_PLATFORMS = [
   ...SHOP_SPOTS.map(([x, y]) => ({ x, y, w: SHOP_PLAT_W })),
 ];
 
+// ---------- The teleporter (through the teleporting-guy doorway) ----------
+// A stack of rings standing on a round pad. Only the back half of each ring
+// is built, so the stack is open in the front and you can walk right in.
+const TELE_W = 240, TELE_DOOR_X = 16, TELE_CX = 140;
+const TELE_RINGS = [118, 98, 78, 58, 38], TELE_RX = 24, TELE_RY = 5;
+const LAB2_TELE_X = 249, LAB2_TELE_Y = 186;             // the teleporter doorway's step in lab room 2
+const [teleBg, tpx] = makeCanvas(TELE_W, H);
+{
+  const put = (x, y, c) => { tpx.fillStyle = c; tpx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, tpx);
+  const DARK = ['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'];
+  // Lab walls, a bit darker so the rings glow.
+  for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < TELE_W; x++) {
+    const px = x % 40;
+    let c = bayer(x, y) > y / FLOOR_Y ? '#141a2a' : '#1a2238';
+    if (px === 0 || y === 46 || y === 96) c = '#080a12';
+    else if (px === 1 || y === 47 || y === 97) c = '#2c3852';
+    put(x, y, c);
+  }
+  for (let y = 0; y < 14; y++) for (let x = 0; x < TELE_W; x++) put(x, y, y === 13 ? '#0a0e18' : '#121826');
+  sb(['#0c2a30', '#185058', '#2a8088', '#58c0c8'], -2, 3, TELE_W + 4, 5, 0);
+  sb(STEEL, -2, 9, TELE_W + 4, 3, 0);
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < TELE_W; x++) {
+    const ry = y - FLOOR_Y;
+    put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : (x % 6 === 0 || ry % 6 === 1) ? '#22293a' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
+  }
+  // Door back out to the lab.
+  sb(DARK, 4, FLOOR_Y - 40, 24, 40, 0);
+  sb(HATCH, 7, FLOOR_Y - 36, 18, 36, 1);
+  for (let y = FLOOR_Y - 36; y < FLOOR_Y; y++) { put(15, y, '#101018'); put(16, y, '#101018'); }
+  for (let x = 11; x < 21; x++) put(x, FLOOR_Y - 39, '#40e0ff');
+  // Control console off to the right.
+  sb(STEEL, 196, FLOOR_Y - 22, 36, 22, 1);
+  sb(DARK, 200, FLOOR_Y - 48, 28, 24, 1);
+  for (let y = FLOOR_Y - 44; y < FLOOR_Y - 28; y++) for (let x = 203; x < 225; x++) put(x, y, bayer(x, y) > 0.8 ? '#10304a' : '#0a2238');
+  drawPlaceIcon(tpx, 'teleport', 214, FLOOR_Y - 36, '#0a2238');
+  ['#40e0ff', '#40e040', '#f8d040'].forEach((c, i) => { put(202 + i * 5, FLOOR_Y - 14, c); put(203 + i * 5, FLOOR_Y - 14, c); });
+  // Emitter cap on the ceiling.
+  sb(DARK, TELE_CX - 18, 14, 36, 8, 1);
+  for (let x = TELE_CX - 12; x < TELE_CX + 12; x++) put(x, 22, '#40e0ff');
+  // Side rails holding the rings up.
+  for (const rx of [TELE_CX - TELE_RX - 2, TELE_CX + TELE_RX - 1]) sb(STEEL, rx, 22, 4, FLOOR_Y - 28, 0);
+  // Back half of each ring (the front is open), with short stubs where it meets the rails.
+  for (const ry0 of TELE_RINGS) {
+    for (let a = 0; a <= Math.PI; a += 0.01) {
+      const x = Math.round(TELE_CX + Math.cos(a) * TELE_RX), y = Math.round(ry0 - Math.sin(a) * TELE_RY);
+      put(x, y - 1, '#101018'); put(x, y, '#80f0ff'); put(x, y + 1, '#2090b0'); put(x, y + 2, '#101018');
+    }
+    for (const side of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const x = TELE_CX + side * (TELE_RX - k), y = ry0 + (k > 1 ? 1 : 0);
+      put(x, y, '#80f0ff'); put(x, y + 1, '#2090b0'); put(x, y + 2, '#101018');
+    }
+  }
+  // Round pad on the floor.
+  for (let y = -5; y <= 5; y++) for (let x = -30; x <= 30; x++) {
+    const d = (x / 30) ** 2 + (y / 5) ** 2;
+    if (d > 1) continue;
+    put(TELE_CX + x, FLOOR_Y - 6 + y, d > 0.8 ? '#101018' : y < 0 ? (d < 0.45 ? '#40e0ff' : '#7080a0') : '#4a5670');
+  }
+  sb(DARK, TELE_CX - 30, FLOOR_Y - 6, 61, 6, 0);
+  for (let y = -4; y <= 0; y++) for (let x = -28; x <= 28; x++) {
+    const d = (x / 29) ** 2 + ((y + 1) / 4) ** 2;
+    if (d <= 1) put(TELE_CX + x, FLOOR_Y - 7 + y, d > 0.75 ? '#101018' : d < 0.4 ? '#80f0ff' : '#5a6a8a');
+  }
+}
+const TELE_PLATFORMS = [
+  { x: 0, y: FLOOR_Y, w: TELE_W },
+  { x: TELE_CX - 30, y: FLOOR_Y - 6, w: 61 },             // the pad
+  { x: 196, y: FLOOR_Y - 22, w: 36 },                      // console
+];
+// Soft beam of light rising through the rings.
+function drawTeleBeam(now) {
+  const t = now / 1000, x0 = Math.round(TELE_CX - camX);
+  for (let y = 24; y < FLOOR_Y - 8; y++) {
+    const half = TELE_RX - 4;
+    for (let x = -half; x <= half; x++) {
+      const edge = 1 - Math.abs(x) / half;
+      const wave = 0.5 + 0.5 * Math.sin(y * 0.25 + t * 6);
+      if (bayer(x0 + x, y) + 0.5 < 0.22 * edge * (0.6 + 0.4 * wave)) {
+        ctx.fillStyle = '#40e0ff'; ctx.fillRect(x0 + x, y, 1, 1);
+      }
+    }
+  }
+  // A bright ring of light travels up the stack.
+  const ly = FLOOR_Y - 10 - ((t * 40) % (FLOOR_Y - 34));
+  for (let a = 0; a < Math.PI * 2; a += 0.04) {
+    ctx.fillStyle = a < Math.PI ? '#c8ffff' : '#80f0ff';
+    ctx.fillRect(Math.round(x0 + Math.cos(a) * (TELE_RX - 3)), Math.round(ly - Math.sin(a) * (TELE_RY - 1)), 1, 1);
+  }
+}
+
 // ---------- Floating people (third neighborhood) ----------
 // People frozen in midair, arms up and mouths open.
 function floaterSprite(over) {
@@ -2201,6 +2292,7 @@ const ROOMS = {
   town2:   { bg: town2Bg,   w: TOWN2_W,   platforms: TOWN2_PLATFORMS,   rightWall: TOWN2_W - 6, left: 'town', right: 'town3' },
   town3:   { bg: town3Bg,   w: TOWN3_W,   platforms: TOWN3_PLATFORMS,   rightWall: TOWN3_W - 6, left: 'town2' },
   lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6 },
+  tele:    { bg: teleBg,    w: TELE_W,    platforms: TELE_PLATFORMS,    rightWall: TELE_W - 6 },
   shop:    { bg: shopBg,    w: SHOP_W,    platforms: SHOP_PLATFORMS,    rightWall: SHOP_W - 6 },
   repair:  { bg: repairBg,  w: REPAIR_W,  platforms: REPAIR_PLATFORMS,  rightWall: REPAIR_W - 6 },
   lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR },
@@ -2267,12 +2359,12 @@ function drawCaption(speaker, text, shown) {
 // Metroid Fusion-style minimap in the corner.
 function drawHUD(now) {
   // Minimap: the alley, the living room, and the town beyond the locked door. Current room is lit.
-  const mx = W - 103, my = 2;
-  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 103, 14);
-  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 101, 12);
-  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7], ['shop', 90, 7]];
+  const mx = W - 112, my = 2;
+  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 112, 14);
+  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 110, 12);
+  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7], ['shop', 90, 7], ['tele', 99, 7]];
   for (const [name, cx, cw] of cells) {
-    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || name === 'repair' || name === 'shop' ? '#304890' : '#4870c0';
+    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || ['repair', 'shop', 'tele'].includes(name) ? '#304890' : '#4870c0';
     ctx.fillRect(mx + cx, my + 3, cw, 6);
   }
   ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 26, my + 5, 2, 2);
@@ -2341,6 +2433,10 @@ const INTERACTABLES = [
     use: () => goThrough('shop', SHOP_DOOR_X + 18, false) },
   { room: 'shop', x: () => SHOP_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
     use: () => goThrough('lab2', LAB2_SHOP_X, false, true, LAB2_SHOP_Y) },
+  { room: 'lab2', x: () => LAB2_TELE_X, y: LAB2_TELE_Y, iconY: LAB2_TELE_Y - 46, active: () => true,
+    use: () => goThrough('tele', TELE_DOOR_X + 18, false) },
+  { room: 'tele', x: () => TELE_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
+    use: () => goThrough('lab2', LAB2_TELE_X, false, true, LAB2_TELE_Y) },
   { room: 'repair', x: () => REPAIR_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
     use: () => goThrough('lab2', LAB2_REPAIR_X, false, true, LAB2_REPAIR_Y) },
   { room: 'lab2', x: () => LAB_IN_DOOR_X, y: LAB2_FLOOR, iconY: LAB2_FLOOR - 52, active: () => true,
@@ -2647,6 +2743,7 @@ function renderLevel(now) {
   }
   if (room === 'town3') { drawFloaters(); drawLabOutside(); drawSci(); }
   if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.push({ img: DOC_LOOKS[look], x, y, flip });
+  if (room === 'tele') drawTeleBeam(now);
   if (room === 'repair') drawRepairShop();
   else if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
   chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
@@ -3428,6 +3525,7 @@ const DEBUG_SPOTS = [
     ['Lab Room 2', () => debugPlace(6, 'lab2', LAB_IN_DOOR_X + 18, false)],
     ['Repair Shop', () => debugPlace(6, 'repair', REPAIR_DOOR_X + 18, false)],
     ['$ Shop', () => debugPlace(6, 'shop', SHOP_DOOR_X + 18, false)],
+    ['Teleporter', () => debugPlace(6, 'tele', TELE_DOOR_X + 18, false)],
   ]],
 ];
 // Progress levels: 0 intro done, 1 trash picked up, 2 trash thrown, 3 ring zapped,
