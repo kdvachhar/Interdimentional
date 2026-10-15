@@ -1787,11 +1787,6 @@ const [labBg, lbx] = makeCanvas(LAB_W, H);
   sb(STEEL, RX - 22, FLOOR_Y - 16, 44, 16, 1);
   put(RX - 8, FLOOR_Y - 9, '#ff3030'); put(RX - 7, FLOOR_Y - 9, '#ff3030');
   put(RX + 6, FLOOR_Y - 9, '#40e040'); put(RX + 7, FLOOR_Y - 9, '#40e040');
-  // Blue hatch door on the right, deeper into the lab.
-  sb(['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'], LAB_NEXT_DOOR_X - 12, FLOOR_Y - 40, 24, 40, 0);
-  sb(HATCH, LAB_NEXT_DOOR_X - 9, FLOOR_Y - 36, 18, 36, 1);
-  for (let y = FLOOR_Y - 36; y < FLOOR_Y; y++) { put(LAB_NEXT_DOOR_X - 1, y, '#101018'); put(LAB_NEXT_DOOR_X, y, '#101018'); }
-  for (let x = LAB_NEXT_DOOR_X - 5; x < LAB_NEXT_DOOR_X + 5; x++) put(x, FLOOR_Y - 39, '#40e0ff');
 }
 const LAB_PLATFORMS = [
   { x: 0, y: FLOOR_Y, w: LAB_W },
@@ -1895,11 +1890,6 @@ const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
     const ry = y - LAB2_FLOOR;
     put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : (x % 6 === 0 || ry % 6 === 1) ? '#22293a' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
   }
-  // Door back to the first lab room.
-  sb(DARK, 4, LAB2_FLOOR - 40, 24, 40, 0);
-  sb(HATCH, 7, LAB2_FLOOR - 36, 18, 36, 1);
-  for (let y = LAB2_FLOOR - 36; y < LAB2_FLOOR; y++) { put(15, y, '#101018'); put(16, y, '#101018'); }
-  for (let x = 11; x < 21; x++) put(x, LAB2_FLOOR - 39, '#40e0ff');
   // Console in the bottom-left corner: a round dial and a row of lights.
   const cx0 = 32, cw = 62, ctop = LAB2_FLOOR - 40;
   sb(STEEL, cx0, ctop, cw, 40, 1);
@@ -2221,6 +2211,28 @@ function drawTeleBeam(now) {
   for (let a = 0; a < Math.PI * 2; a += 0.04) {
     ctx.fillStyle = a < Math.PI ? '#c8ffff' : '#80f0ff';
     ctx.fillRect(Math.round(x0 + Math.cos(a) * (TELE_RX - 3)), Math.round(ly - Math.sin(a) * (TELE_RY - 1)), 1, 1);
+  }
+}
+
+// The way between the two lab rooms: a glowing spot on the wall that pulses.
+function drawGlowSpot(wx, floorY, now) {
+  const t = now / 1000, cx = Math.round(wx - camX), cy = floorY - 20;
+  const pulse = 0.85 + 0.15 * Math.sin(t * 3);
+  for (let y = -26; y <= 26; y++) for (let x = -18; x <= 18; x++) {
+    const d = Math.hypot(x / 11, y / 18);              // 1 at the edge of the spot
+    let c = null;
+    if (d < 0.35 * pulse) c = '#ffffff';
+    else if (d < 0.65 * pulse) c = bayer(cx + x, cy + y) + 0.5 < 1.6 - d * 1.6 ? '#c8ffff' : '#80f0ff';
+    else if (d < 1) c = '#40e0ff';
+    else if (d < 1.5 && bayer(cx + x, cy + y) + 0.5 < (1.5 - d) * 1.4 * pulse) c = '#2090b0';
+    if (c) { ctx.fillStyle = c; ctx.fillRect(cx + x, cy + y, 1, 1); }
+  }
+  // Sparkles drifting up off the spot.
+  for (let i = 0; i < 6; i++) {
+    const k = (t * 0.6 + i / 6) % 1;
+    const sx = cx + Math.round(Math.sin(i * 2.3 + t) * 9), sy = Math.round(cy + 16 - k * 40);
+    ctx.fillStyle = k < 0.7 ? '#e8ffff' : '#40e0ff';
+    ctx.fillRect(sx, sy, 1, 1);
   }
 }
 
@@ -2744,6 +2756,8 @@ function renderLevel(now) {
   if (room === 'town3') { drawFloaters(); drawLabOutside(); drawSci(); }
   if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.push({ img: DOC_LOOKS[look], x, y, flip });
   if (room === 'tele') drawTeleBeam(now);
+  if (room === 'lab') drawGlowSpot(LAB_NEXT_DOOR_X, FLOOR_Y, now);
+  if (room === 'lab2') drawGlowSpot(LAB_IN_DOOR_X, LAB2_FLOOR, now);
   if (room === 'repair') drawRepairShop();
   else if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
   chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
