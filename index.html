@@ -1639,7 +1639,12 @@ const STEEL = ['#2a3448', '#4a5670', '#7080a0', '#a0b0d0'];
 const HATCH = ['#0c1c4a', '#1c3a82', '#2c5ab4', '#5a88e0'];
 // A tunnel at the edge of a room: a roof beam and pillar at the opening, ribbed
 // walls inside, and bright light at the far end so you never see where it stops.
-const TUNNEL_W = 34, TUNNEL_H = 46;
+const TUNNEL_W = 34, TUNNEL_H = 46, TUNNEL_ROOF = 7;
+// The tunnel roof: a platform on top, and a ceiling underneath to bump your head on.
+const tunnelRoof = (x0, floorY, lightOnRight) => {
+  const x = lightOnRight ? x0 - 5 : x0, w = TUNNEL_W + 5;
+  return { top: { x, y: floorY - TUNNEL_H - TUNNEL_ROOF, w }, under: { x, y: floorY - TUNNEL_H, w } };
+};
 function drawTunnel(g, x0, floorY, lightOnRight) {
   const put = (x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
   const top = floorY - TUNNEL_H;
@@ -1655,7 +1660,7 @@ function drawTunnel(g, x0, floorY, lightOnRight) {
   }
   // Roof beam across the top and a pillar at the opening.
   const ox = lightOnRight ? x0 - 5 : x0 + TUNNEL_W - 1;
-  shadedBox(STEEL, lightOnRight ? x0 - 5 : x0, top - 7, TUNNEL_W + 5, 7, 0, g);
+  shadedBox(STEEL, lightOnRight ? x0 - 5 : x0, top - TUNNEL_ROOF, TUNNEL_W + 5, TUNNEL_ROOF, 0, g);
   shadedBox(STEEL, ox, top - 1, 6, TUNNEL_H + 1, 0, g);
   for (let i = 0; i < TUNNEL_W + 5; i += 4) put((lightOnRight ? x0 - 5 : x0) + i + 1, top - 4, '#f8d040');
 }
@@ -1819,8 +1824,10 @@ const [labBg, lbx] = makeCanvas(LAB_W, H);
   put(RX + 6, FLOOR_Y - 9, '#40e040'); put(RX + 7, FLOOR_Y - 9, '#40e040');
   drawTunnel(lbx, LAB_W - TUNNEL_W, FLOOR_Y, true);       // on to lab room 2
 }
+const LAB_TUNNEL = tunnelRoof(LAB_W - TUNNEL_W, FLOOR_Y, true);
 const LAB_PLATFORMS = [
   { x: 0, y: FLOOR_Y, w: LAB_W },
+  LAB_TUNNEL.top,                        // tunnel roof
   { x: 42, y: FLOOR_Y - 18, w: 44 },     // consoles
   { x: 160, y: FLOOR_Y - 18, w: 56 },
   { x: 100, y: 46, w: 22 },              // tube tops
@@ -1964,8 +1971,10 @@ const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
     drawPlaceIcon(l2x, place, cx, Math.round((ay + top - 4) / 2), place === 'money' ? '#2a6a3a' : place === 'hammer' ? '#5a5a7a' : '#2a5a8a');
   }
 }
+const LAB2_TUNNEL = tunnelRoof(0, LAB2_FLOOR, false);
 const LAB2_PLATFORMS = [
   { x: 0, y: LAB2_FLOOR, w: LAB2_W },
+  LAB2_TUNNEL.top,                       // tunnel roof
   { x: 32, y: LAB2_FLOOR - 40, w: 62 },                        // console top
   ...LAB2_LEDGES.map(([x, y, w]) => ({ x, y, w })),
   ...LAB2_CASES.map(([ax, ay, aw, ah, py]) => ({ x: Math.round(ax + aw / 2) - 23, y: py, w: 46 })),   // doorsteps
@@ -2324,11 +2333,11 @@ const ROOMS = {
   town:    { bg: townBg,    w: TOWN_W,    platforms: TOWN_PLATFORMS,    rightWall: TOWN_W - 6,  right: 'town2' },
   town2:   { bg: town2Bg,   w: TOWN2_W,   platforms: TOWN2_PLATFORMS,   rightWall: TOWN2_W - 6, left: 'town', right: 'town3' },
   town3:   { bg: town3Bg,   w: TOWN3_W,   platforms: TOWN3_PLATFORMS,   rightWall: TOWN3_W - 6, left: 'town2' },
-  lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6, right: 'lab2' },
+  lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6, right: 'lab2', ceilings: [LAB_TUNNEL.under] },
   tele:    { bg: teleBg,    w: TELE_W,    platforms: TELE_PLATFORMS,    rightWall: TELE_W - 6 },
   shop:    { bg: shopBg,    w: SHOP_W,    platforms: SHOP_PLATFORMS,    rightWall: SHOP_W - 6 },
   repair:  { bg: repairBg,  w: REPAIR_W,  platforms: REPAIR_PLATFORMS,  rightWall: REPAIR_W - 6 },
-  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR, left: 'lab' },
+  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR, left: 'lab', ceilings: [LAB2_TUNNEL.under] },
 };
 let room = 'living';
 const curRoom = () => ROOMS[room];
@@ -2704,9 +2713,15 @@ function updatePlay(dt) {
   // Getting close to the scientist at the end of the third street starts his scene.
   if (room === 'town3' && !bossDone && !doorT && p.x >= SCI_X - 90) { startBossScene(); return; }
   // Walking off either end of a street takes you to the next neighborhood.
-  if (curRoom().right && p.x >= curRoom().rightWall) goThrough(curRoom().right, 14, false, false);
-  else if (curRoom().left && p.x <= 6) goThrough(curRoom().left, ROOMS[curRoom().left].w - 14, true, false);
+  const atGround = p.y > roomFloor() - TUNNEL_H;
+  if (curRoom().right && atGround && p.x >= curRoom().rightWall) goThrough(curRoom().right, 14, false, false);
+  else if (curRoom().left && atGround && p.x <= 6) goThrough(curRoom().left, ROOMS[curRoom().left].w - 14, true, false);
   p.y += p.vy * dt;
+  // Solid ceilings (like tunnel roofs): bump your head instead of jumping through.
+  if (p.vy < 0) for (const c of curRoom().ceilings || []) {
+    const HEAD = 25;
+    if (p.x + 3 > c.x && p.x - 3 < c.x + c.w && prevY - HEAD >= c.y && p.y - HEAD < c.y) { p.y = c.y + HEAD; p.vy = 0; }
+  }
   const wasOnGround = p.onGround;
   p.onGround = false;
   if (p.vy >= 0) {
