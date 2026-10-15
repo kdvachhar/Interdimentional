@@ -32,6 +32,168 @@ function fit() {
 addEventListener('resize', fit);
 fit();
 
+// ---------- Sound effects (synthesized with Web Audio, no files) ----------
+let actx = null, master = null, noiseBuf = null;
+function audio() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC();
+    master = actx.createGain();
+    master.gain.value = 0.35;
+    master.connect(actx.destination);
+    noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+// Browsers only allow sound after the player interacts with the page.
+addEventListener('keydown', audio);
+addEventListener('mousedown', audio);
+
+function tone({ type = 'square', f0, f1 = f0, dur, vol = 0.2, delay = 0, attack = 0.005 }) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + delay;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function noise({ dur, vol = 0.2, filter = 'lowpass', f0 = 1000, f1 = f0, q = 1, delay = 0, attack = 0.005 }) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + delay;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  f.type = filter; f.Q.value = q;
+  f.frequency.setValueAtTime(f0, t);
+  f.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+}
+
+const sfx = {
+  blip: () => tone({ f0: 880, dur: 0.05, vol: 0.08 }),
+  select: () => { tone({ f0: 660, dur: 0.06, vol: 0.1 }); tone({ f0: 990, dur: 0.08, vol: 0.1, delay: 0.06 }); },
+  confirm: () => [523, 659, 784, 1046].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 0.12, vol: 0.18, delay: i * 0.06 })),
+  back: () => tone({ f0: 440, f1: 220, dur: 0.12, vol: 0.1 }),
+  type: (low) => tone({ f0: low ? 300 : 600 + Math.random() * 80, dur: 0.03, vol: 0.07 }),
+  voice: (isMom) => tone({ f0: (isMom ? 230 : 340) * (0.9 + Math.random() * 0.25), dur: 0.05, vol: 0.06 }),
+  step: (quiet) => {
+    noise({ dur: 0.05, vol: quiet ? 0.05 : 0.1, f0: 500, f1: 200 });
+    tone({ type: 'sine', f0: 110, f1: 60, dur: 0.05, vol: quiet ? 0.05 : 0.09 });
+  },
+  jump: () => tone({ f0: 220, f1: 560, dur: 0.14, vol: 0.1 }),
+  land: () => { noise({ dur: 0.08, vol: 0.14, f0: 350, f1: 120 }); tone({ type: 'sine', f0: 90, f1: 45, dur: 0.08, vol: 0.12 }); },
+  pickup: () => { noise({ dur: 0.18, vol: 0.12, filter: 'bandpass', f0: 1500, f1: 3500, q: 2 }); tone({ type: 'triangle', f0: 784, f1: 1175, dur: 0.12, vol: 0.1, delay: 0.08 }); },
+  door: () => {
+    noise({ dur: 0.3, vol: 0.06, filter: 'bandpass', f0: 500, f1: 900, q: 6 });
+    tone({ type: 'sawtooth', f0: 140, f1: 95, dur: 0.3, vol: 0.04 });
+    noise({ dur: 0.1, vol: 0.18, f0: 300, f1: 100, delay: 0.3 });
+    tone({ type: 'sine', f0: 80, f1: 40, dur: 0.12, vol: 0.15, delay: 0.3 });
+  },
+  creak: () => {
+    tone({ type: 'sawtooth', f0: 180, f1: 120, dur: 0.6, vol: 0.05, attack: 0.05 });
+    noise({ dur: 0.6, vol: 0.05, filter: 'bandpass', f0: 700, f1: 1200, q: 8, attack: 0.05 });
+  },
+  locked: () => [0, 0.09].forEach(d => { tone({ f0: 1100, dur: 0.04, vol: 0.08, delay: d }); noise({ dur: 0.05, vol: 0.08, filter: 'highpass', f0: 2000, delay: d }); }),
+  whoosh: () => noise({ dur: 0.4, vol: 0.15, filter: 'bandpass', f0: 400, f1: 2400, q: 1.5, attack: 0.08 }),
+  clang: () => {
+    [320, 467, 891, 1230].forEach((f, i) => tone({ type: i % 2 ? 'square' : 'sine', f0: f, f1: f * 0.98, dur: 0.7, vol: 0.06 }));
+    noise({ dur: 0.12, vol: 0.2, f0: 2000, f1: 300 });
+  },
+  ahha: () => {
+    tone({ f0: 520, f1: 880, dur: 0.12, vol: 0.12 });
+    tone({ f0: 880, f1: 1320, dur: 0.25, vol: 0.12, delay: 0.12 });
+    noise({ dur: 0.15, vol: 0.12, f0: 3000, f1: 800 });
+  },
+  ding: () => { tone({ type: 'sine', f0: 1320, dur: 0.4, vol: 0.15 }); tone({ type: 'sine', f0: 1980, dur: 0.3, vol: 0.08 }); },
+  zap: () => {
+    const a = audio(); if (!a) return;
+    for (let i = 0; i < 8; i++) noise({ dur: 0.12, vol: 0.2, filter: 'highpass', f0: 1500 + Math.random() * 3000, delay: i * 0.09 });
+    tone({ type: 'sawtooth', f0: 120, f1: 60, dur: 0.8, vol: 0.12 });
+    tone({ type: 'square', f0: 2400, f1: 300, dur: 0.15, vol: 0.08 });
+  },
+  field: () => {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime;
+    const lfo = a.createOscillator(), lfoGain = a.createGain(), g = a.createGain();
+    lfo.frequency.value = 9; lfoGain.gain.value = 0.04;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + 0.15);
+    g.gain.setValueAtTime(0.08, t + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.8);
+    lfo.connect(lfoGain); lfoGain.connect(g.gain);
+    for (const f of [220, 330, 441]) {
+      const o = a.createOscillator();
+      o.type = 'sine'; o.frequency.value = f;
+      o.connect(g); o.start(t); o.stop(t + 1.85);
+    }
+    g.connect(master);
+    lfo.start(t); lfo.stop(t + 1.85);
+  },
+  drone: () => {
+    tone({ type: 'sawtooth', f0: 55, f1: 52, dur: 6.5, vol: 0.05, attack: 1 });
+    tone({ type: 'sine', f0: 82, f1: 78, dur: 6.5, vol: 0.06, attack: 1.5 });
+  },
+  sting: () => {
+    [110, 131, 165, 220].forEach(f => tone({ type: 'sawtooth', f0: f, f1: f * 0.97, dur: 2.2, vol: 0.045, attack: 0.02 }));
+    noise({ dur: 0.5, vol: 0.18, f0: 1200, f1: 100 });
+  },
+  raise: () => {
+    tone({ type: 'sine', f0: 300, f1: 1200, dur: 1.3, vol: 0.09, attack: 0.3 });
+    [1500, 1800, 2250].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 0.5, vol: 0.04, delay: 0.5 + i * 0.15 }));
+  },
+  twist: () => {
+    noise({ dur: 3.4, vol: 0.2, filter: 'lowpass', f0: 150, f1: 700, attack: 0.6 });
+    tone({ type: 'sawtooth', f0: 60, f1: 400, dur: 3.2, vol: 0.06, attack: 0.5 });
+    tone({ type: 'sine', f0: 200, f1: 900, dur: 3.2, vol: 0.05, attack: 0.5 });
+  },
+  spin: () => {
+    tone({ type: 'square', f0: 180, f1: 1400, dur: 1.5, vol: 0.05, attack: 0.1 });
+    noise({ dur: 1.5, vol: 0.1, filter: 'bandpass', f0: 300, f1: 3000, q: 3, attack: 0.3 });
+  },
+  vanish: () => {
+    // A poof that echoes away.
+    for (let i = 0; i < 5; i++) {
+      const v = Math.pow(0.5, i), d = i * 0.3;
+      noise({ dur: 0.5, vol: 0.22 * v, filter: 'bandpass', f0: 3000, f1: 300, q: 1, delay: d });
+      tone({ type: 'sine', f0: 900, f1: 180, dur: 0.5, vol: 0.12 * v, delay: d });
+    }
+  },
+  portal: () => {
+    tone({ type: 'sawtooth', f0: 80, f1: 900, dur: 1.2, vol: 0.08, attack: 0.1 });
+    noise({ dur: 1.3, vol: 0.12, filter: 'bandpass', f0: 300, f1: 3000, q: 2, attack: 0.2 });
+  },
+};
+
+// Footstep sounds, timed to the walk animation.
+function guySteps(c) {
+  const f = Math.floor(c.walkT / 0.08) % 8;
+  if (f !== c.stepF && (f === 0 || f === 4)) sfx.step(false);
+  c.stepF = f;
+}
+function momSteps(c) {
+  const f = Math.floor(c.walkT / 0.15) % 2;
+  if (f !== c.stepF) sfx.step(true);
+  c.stepF = f;
+}
+// Talking "voice" blips as caption text types out.
+function voiceBlips(prevShown, shown, text, isMom) {
+  for (let i = Math.floor(prevShown); i < Math.floor(shown); i++)
+    if (i % 2 === 0 && text[i] !== ' ') sfx.voice(isMom);
+}
+
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -89,6 +251,7 @@ const FONT = {
   '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
   ':': ['.....', '..#..', '.....', '.....', '.....', '..#..', '.....'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.....', '..#..'],
+  '-': ['.....', '.....', '.....', '.###.', '.....', '.....', '.....'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
 
@@ -151,6 +314,7 @@ const PAL = {
   h: '#186030', H: '#30a050',
   n: '#7a4420', N: '#4a2810', v: '#9048c0', V: '#602c88',
   q: '#ff8878', u: '#5c84e0',
+  z: '#1c1c26', Z: '#34344a', x: '#6a6a88',
 };
 function sprite(rows) {
   const w = Math.max(...rows.map(r => r.length));
@@ -536,7 +700,229 @@ const GUY_STAND = sprite([
   '.kGGGkkGGGk.',
   '.kkkkkkkkkk.',
 ]);
-const GUY_WALK = sprite([
+// Eight-frame walk cycle: heel strike, knee bend, passing, push-off, then the other leg.
+// Knees bend slightly forward; the near arm swings opposite the near leg. No up-and-down bob.
+const GUY_WALK_FRAMES = [
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.kqqrrrrRk..',
+    'kkrqrrrrRk..',
+    'ksskrrrrRk..',
+    'kSskrrrrRk..',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kBBkbubk..',
+    '..kBBk.kbuk.',
+    '.kBBk...kbuk',
+    'kBBk....kbuk',
+    'kwwwk..kwwwk',
+    'kGGGk..kGGGk',
+    'kkkkk..kkkkk',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.kqqrrrrRk..',
+    'kkrqrrrrRk..',
+    'ksskrrrrRk..',
+    'kSskrrrrRk..',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kBBkbubk..',
+    '..kBBk.kbuk.',
+    '.kBBk.kbuk..',
+    '.kBBk.kbuk..',
+    'kwwwkkwwwk..',
+    'kGGGkkGGGk..',
+    'kkkkkkkkkk..',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.krqrkrrRk..',
+    '.krqrkrrRk..',
+    '.kssSkrrRk..',
+    '.ksskkrrRk..',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kbubBBk...',
+    '..kbukBBBk..',
+    '..kbukkBk...',
+    '..kbuk.kwwk.',
+    '.kwwwk.kGGk.',
+    '.kGGGk..kk..',
+    '.kkkkk......',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.krrqqrrRk..',
+    '.krrrqqrRkk.',
+    '.krrrrrRkssk',
+    '.krrrrrRkSk.',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kbubkBBk..',
+    '..kbuk.kBBk.',
+    '..kbuk.kBk..',
+    '..kbuk.kwwk.',
+    '.kwwwk.kGGk.',
+    '.kGGGk..kk..',
+    '.kkkkk......',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.krrqqrrRk..',
+    '.krrrqqrRkk.',
+    '.krrrrrRkssk',
+    '.krrrrrRkSk.',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kbukkBBk..',
+    '..kbuk.kBBk.',
+    '.kbuk...kBBk',
+    'kbuk....kBBk',
+    'kwwwk..kwwwk',
+    'kGGGk..kGGGk',
+    'kkkkk..kkkkk',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.krrqqrrRk..',
+    '.krrrqqrRkk.',
+    '.krrrrrRkssk',
+    '.krrrrrRkSk.',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kbukkBBk..',
+    '..kbuk.kBBk.',
+    '.kbuk.kBBk..',
+    '.kbuk.kBBk..',
+    'kwwwkkwwwk..',
+    'kGGGkkGGGk..',
+    'kkkkkkkkkk..',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.krqrkrrRk..',
+    '.krqrkrrRk..',
+    '.kssSkrrRk..',
+    '.ksskkrrRk..',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kBBkbuk...',
+    '..kBBkbuuk..',
+    '..kBBkkuk...',
+    '..kBBk.kwwk.',
+    '.kwwwk.kGGk.',
+    '.kGGGk..kk..',
+    '.kkkkk......',
+  ]),
+  sprite([
+    '...kkkkk....',
+    '..kcCCcck...',
+    '.kcccccccBk.',
+    '.kBBBBBBBBk.',
+    '.kNNsssssk..',
+    '.kNSsswksk..',
+    '.kSsssssssk.',
+    '.kSsssskk...',
+    '..kSsssk....',
+    '...kssk.....',
+    '..kkrrrkk...',
+    '.krqqrrrRk..',
+    '.kqqrrrrRk..',
+    'kkrqrrrrRk..',
+    'ksskrrrrRk..',
+    'kSskrrrrRk..',
+    '..kkBGBBk...',
+    '..kbubbBk...',
+    '..kBBkbuk...',
+    '..kBBk.kbuk.',
+    '..kBBk.kbk..',
+    '..kBBk.kwwk.',
+    '.kwwwk.kGGk.',
+    '.kGGGk..kk..',
+    '.kkkkk......',
+  ]),
+];
+const GUY_JUMP = GUY_WALK_FRAMES[3];
+// Standing with his arm stretched out to touch something.
+const GUY_REACH = sprite([
   '...kkkkk....',
   '..kcCCcck...',
   '.kcccccccBk.',
@@ -549,19 +935,19 @@ const GUY_WALK = sprite([
   '...kssk.....',
   '..kkrrrkk...',
   '.krqqrrrRk..',
-  '.krqrkrrRk..',
-  '.krqrkrrRk..',
-  '.kssSkrrRk..',
-  '.ksskkrrRk..',
+  '.krrqqrrRk..',
+  '.krrrqqrRkk.',
+  '.krrrrrRkssk',
+  '.krrrrrRkSk.',
   '..kkBGBBk...',
   '..kbubbBk...',
   '..kbukbBk...',
-  '.kbuk..kBk..',
-  '.kbuk..kbBk.',
-  'kbuk....kBk.',
-  'kwwwk..kwwwk',
-  'kGGGk..kGGGk',
-  'kkkkk..kkkkk',
+  '..kbuk.kBk..',
+  '..kbuk.kBk..',
+  '..kbBk.kBk..',
+  '.kwwwkkwwwk.',
+  '.kGGGkkGGGk.',
+  '.kkkkkkkkkk.',
 ]);
 const GUY_SIT = sprite([
   '....kkkkk.....',
@@ -741,16 +1127,17 @@ function renderName(now) {
 }
 
 function nameKey(e) {
-  if (/^Key[A-Z]$/.test(e.code)) { if (playerName.length < NAME_MAX) playerName += e.code[3]; }
+  if (/^Key[A-Z]$/.test(e.code)) { if (playerName.length < NAME_MAX) { playerName += e.code[3]; sfx.type(); } }
   else if (e.code === 'Space') {
     if (playerName && !playerName.endsWith(' ') && playerName.length < NAME_MAX) playerName += ' ';
   }
-  else if (e.code === 'Backspace') playerName = playerName.slice(0, -1);
+  else if (e.code === 'Backspace') { if (playerName) sfx.type(true); playerName = playerName.slice(0, -1); }
   else if (e.code === 'Enter') {
     if (e.repeat || !playerName.trim()) return;
     playerName = playerName.trim();
     confirmSel = 0;
     state = 'confirm';
+    sfx.select();
   }
   else if (e.code === 'Escape') { playerName = ''; state = 'select'; }
   else return;
@@ -760,7 +1147,7 @@ function nameKey(e) {
 function confirmKey(e) {
   if (e.repeat) return;
   switch (e.code) {
-    case 'ArrowLeft': case 'ArrowRight': case 'KeyA': case 'KeyD': confirmSel = 1 - confirmSel; break;
+    case 'ArrowLeft': case 'ArrowRight': case 'KeyA': case 'KeyD': confirmSel = 1 - confirmSel; sfx.blip(); break;
     case 'KeyY': confirmSel = 0; answerConfirm(); break;
     case 'KeyN': case 'Escape': confirmSel = 1; answerConfirm(); break;
     case 'Enter': case 'Space': answerConfirm(); break;
@@ -770,8 +1157,8 @@ function confirmKey(e) {
 }
 function answerConfirm() {
   canvas.style.cursor = 'default';
-  if (confirmSel === 0) startCutscene();
-  else state = 'name';
+  if (confirmSel === 0) { sfx.confirm(); startCutscene(); }
+  else { sfx.back(); state = 'name'; }
 }
 
 // ---------- Living room level (laid out exactly like the hand-drawn map) ----------
@@ -801,7 +1188,7 @@ function bevel(ramp, x0, y0, w, h) {
     return bayer(x, y) + Math.sin(x * 0.7 + y * 0.2) * 0.2 > 0.35 ? ramp[1] : ramp[2];
   };
 }
-const shadedBox = (ramp, x, y, w, h, c = 1) => cbox(rbx, x, y, w, h, c, bevel(ramp, x, y, w, h));
+const shadedBox = (ramp, x, y, w, h, c = 1, t = rbx) => cbox(t, x, y, w, h, c, bevel(ramp, x, y, w, h));
 
 const [levelBg, rbx] = makeCanvas(LEVEL_W, H);
 {
@@ -901,6 +1288,561 @@ const PLATFORMS = [
   { x: 175, y: 92, w: 48 },           // top of the couch back
 ];
 
+// ---------- Alleyway (behind the door by the counter) ----------
+// Night-time alley behind the house: brick walls, a dumpster with trash bags around it,
+// and a strange metal ring with a red and a green button.
+const ALLEY_W = 300, ALLEY_DOOR_X = 273, LIVING_DOOR_X = 27;
+const RING = { x: 62, y: 102, rOut: 30, rIn: 22 };
+const [alleyBg, abx] = makeCanvas(ALLEY_W, H);
+{
+  const put = (x, y, c) => { abx.fillStyle = c; abx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, abx);
+  // Daytime sky with a few puffy clouds.
+  for (let y = 0; y < 22; y++) for (let x = 0; x < ALLEY_W; x++)
+    put(x, y, bayer(x, y) > y / 22 - 0.4 ? '#5aa0e8' : '#8cc8ff');
+  for (const [cx, cy, r] of [[40, 10, 7], [52, 12, 6], [150, 8, 6], [161, 11, 7], [172, 9, 5], [250, 12, 6], [262, 10, 7]])
+    for (let y = cy - r; y <= Math.min(21, cy + r); y++) for (let x = cx - r * 2; x <= cx + r * 2; x++)
+      if (((x - cx) / 2) ** 2 + (y - cy) ** 2 <= r * r) put(x, y, y > cy + r / 3 ? '#d8e8f8' : '#ffffff');
+  // Wall cap.
+  for (let x = 0; x < ALLEY_W; x++) { put(x, 22, '#101018'); put(x, 23, '#d8d8e0'); put(x, 24, '#9a9aa8'); put(x, 25, '#101018'); }
+  // Sunlit brick wall, with a band of shade just under the wall cap.
+  for (let y = 26; y < FLOOR_Y; y++) for (let x = 0; x < ALLEY_W; x++) {
+    const row = Math.floor((y - 26) / 5), bx = (x + (row % 2) * 6) % 12;
+    const mortar = (y - 26) % 5 === 4 || bx === 11;
+    const shade = y < 34 && bayer(x, y) > (y - 26) / 8 - 0.5;
+    const v = bayer(x, y) * 0.5 + ((row * 7 + Math.floor((x + (row % 2) * 6) / 12) * 13) % 5) * 0.08 + (shade ? -0.6 : 0.2);
+    put(x, y, mortar ? (shade ? '#8a7a70' : '#c8b8a8')
+      : v > 0.75 ? '#c46650' : v > 0.35 ? '#a44c3a' : v > -0.1 ? '#86382a' : '#5e261c');
+  }
+  // Concrete ground with cracks and a puddle.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < ALLEY_W; x++) {
+    const ry = y - FLOOR_Y;
+    let c = ry === 0 ? '#e0e0e8' : ry === 1 ? '#101018'
+      : bayer(x, y) * 1.2 > (ry - 2) / 22 - 0.1 ? '#a8a8b4' : '#8a8a98';
+    if (ry > 2 && ((x * 3 + ry * 7) % 61 === 0 || (x - ry * 2) % 97 === 0)) c = '#5a5a68';
+    if (((x - 190) / 22) ** 2 + ((y - 148) / 4) ** 2 < 1) c = bayer(x, y) > 0.1 ? '#8cc8ff' : '#5aa0e8';
+    put(x, y, c);
+  }
+  // Drainpipe.
+  sb(RAMP.metal, 232, 26, 4, FLOOR_Y - 28, 0);
+  sb(RAMP.metal, 229, 128, 10, 4, 1);
+
+  // Back door of the house, with a lamp above it.
+  const dx = ALLEY_DOOR_X - 13, dy = 90, dw = 26, dh = FLOOR_Y - dy, r = dw / 2;
+  sb(['#2a2a34', '#4a4a58', '#6a6a7a', '#9a9aaa'], dx - 3, dy - 3, dw + 6, dh + 3, 0);
+  shape(abx, dx, dy, dw, dh,
+    (px, py) => px >= 0 && px < dw && py >= 0 && py < dh && (py >= r || (px - r + 0.5) ** 2 + (py - r) ** 2 <= r * r),
+    bevel(RAMP.door, dx, dy, dw, dh));
+  cbox(abx, dx + 5, dy + 14, dw - 10, 12, 1, bevel(RAMP.door, dx + 5, dy + 14, dw - 10, 12));
+  cbox(abx, dx + 5, dy + 29, dw - 10, 13, 1, bevel(RAMP.door, dx + 5, dy + 29, dw - 10, 13));
+  put(dx + 3, 114, '#fff07a'); put(dx + 4, 114, '#e0b828'); put(dx + 3, 115, '#a07c10'); put(dx + 4, 115, '#5a4208');
+  sb(RAMP.black, ALLEY_DOOR_X - 4, 76, 9, 4, 1);
+  cbox(abx, ALLEY_DOOR_X - 2, 80, 5, 3, 1, '#d8d8cc');   // lamp is off in the daytime
+
+  // Dumpster: green metal, ribbed sides, lid on top, little wheels.
+  const green = ['#0c2a1a', '#1c5030', '#2c7a48', '#5cb070'];
+  sb(green, 120, 104, 56, 28, 2);
+  for (let x = 128; x < 172; x += 9) sb(green, x, 108, 4, 20, 1);
+  sb(['#08200f', '#123a22', '#1c5030', '#3c8a58'], 117, 98, 62, 7, 2);
+  cbox(abx, 140, 113, 16, 7, 1, '#e8e0c0');
+  for (let x = 143; x < 153; x++) put(x, 116, '#5a5a6a');
+  for (const wx of [126, 166]) cbox(abx, wx, 131, 6, 5, 2, '#202028');
+
+  // The metal ring: a thick riveted steel hoop on a stand.
+  sb(RAMP.metal, RING.x - 16, RING.y + RING.rOut - 2, 32, FLOOR_Y - (RING.y + RING.rOut - 2), 1);
+  const m = RAMP.metal;
+  for (let y = RING.y - RING.rOut - 1; y <= RING.y + RING.rOut + 1; y++)
+    for (let x = RING.x - RING.rOut - 1; x <= RING.x + RING.rOut + 1; x++) {
+      const dxr = x - RING.x, dyr = y - RING.y, d = Math.hypot(dxr, dyr);
+      if (d < RING.rIn || d > RING.rOut) continue;
+      if (d < RING.rIn + 1 || d > RING.rOut - 1) { put(x, y, '#101018'); continue; }
+      const t = (d - RING.rIn) / (RING.rOut - RING.rIn);
+      const light = -Math.cos(Math.atan2(dyr, dxr) + Math.PI / 4);
+      const v = light * 0.6 + (0.5 - Math.abs(t - 0.5)) * 1.4 + bayer(x, y) * 0.3;
+      put(x, y, v > 0.95 ? m[3] : v > 0.45 ? m[2] : v > -0.1 ? m[1] : m[0]);
+    }
+  // Rivets around the ring.
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2, rr = (RING.rIn + RING.rOut) / 2;
+    const rx = Math.round(RING.x + Math.cos(a) * rr), ry = Math.round(RING.y + Math.sin(a) * rr);
+    if (i === 0 || i === 11 || i === 1) continue; // leave room for the buttons
+    put(rx, ry, '#e0f0ff'); put(rx + 1, ry + 1, '#141c2c');
+  }
+  // Red and green buttons on the right side of the ring.
+  const button = (bx, by, ramp) => {
+    cbox(abx, bx - 3, by - 3, 7, 7, 2, '#101018');
+    cbox(abx, bx - 2, by - 2, 5, 5, 1, (x, y) => (x - bx + y - by < 0 ? ramp[2] : ramp[1]), ramp[0]);
+    put(bx - 1, by - 1, ramp[3]);
+  };
+  button(RING.x + 26, RING.y - 6, ['#400808', '#a01818', '#ff3030', '#ffc0c0']);
+  button(RING.x + 26, RING.y + 6, ['#083008', '#188a18', '#40e040', '#d0ffd0']);
+}
+const ALLEY_PLATFORMS = [
+  { x: 0, y: FLOOR_Y, w: ALLEY_W },    // ground
+  { x: 117, y: 98, w: 62 },            // dumpster lid
+  { x: RING.x - 16, y: RING.y + RING.rOut - 2, w: 32 }, // ring stand
+];
+// Trash bags piled around the dumpster (and one on the lid): [x, footY].
+const ALLEY_BAGS = [[108, FLOOR_Y], [97, FLOOR_Y], [103, FLOOR_Y - 9], [186, FLOOR_Y], [199, FLOOR_Y], [150, 98]];
+
+// ---------- Town (through the front door) ----------
+// Sunny streets of big white houses with red roofs and green window sills,
+// more little houses up on the hill behind them, and a city skyline far away.
+// Three neighborhood screens in a row: walk off the right edge to go to the next.
+const DOOR_RAMPS = [
+  ['#4a1c0c', '#82361a', '#b45428', '#e07c44'], ['#0c1c4a', '#1c3a82', '#2c5ab4', '#5a88e0'],
+  ['#4a0c0c', '#821a1a', '#b42828', '#e05a5a'], ['#0c3a2a', '#1a6a4a', '#2c9a6a', '#5ac898'],
+  ['#3a2a0c', '#6a4c1a', '#9a7028', '#c8a058'], ['#2a0c3a', '#4c1a6a', '#70289a', '#a058c8'],
+];
+const TOWN_W = 640;
+const TOWN_HOUSES = [   // [x, width, stories, door color]
+  [8, 92, 2, DOOR_RAMPS[0]],    // your house
+  [132, 100, 1, DOOR_RAMPS[1]],
+  [268, 88, 2, DOOR_RAMPS[2]],
+  [392, 108, 1, DOOR_RAMPS[3]],
+  [532, 96, 2, DOOR_RAMPS[4]],
+];
+const TOWN_HOME_X = TOWN_HOUSES[0][0] + TOWN_HOUSES[0][1] / 2;
+const TOWN_FENCES = [[100, 32], [232, 36], [356, 36], [500, 32]];
+// Lays out a street of houses with fences between them.
+function streetLayout(TW, seed) {
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const houses = [], fences = [];
+  let x = 24;
+  while (true) {
+    const hw = 88 + Math.floor(rnd() * 24);
+    if (x + hw > TW - 16) break;
+    houses.push([x, hw, rnd() < 0.5 ? 2 : 1, DOOR_RAMPS[Math.floor(rnd() * DOOR_RAMPS.length)]]);
+    x += hw;
+    const gap = 30 + Math.floor(rnd() * 12);
+    if (x + gap + 88 > TW - 16) break;
+    fences.push([x, gap]);
+    x += gap;
+  }
+  return [houses, fences];
+}
+const TOWN2_W = 960, TOWN3_W = 1048;   // the third street ends at the lab
+const [TOWN2_HOUSES, TOWN2_FENCES] = streetLayout(TOWN2_W, 31);
+const [TOWN3_HOUSES, TOWN3_FENCES] = streetLayout(960, 77);
+function buildTown(TW, houses, fences, seed0, sunset = false) {
+  const [bg, tbx] = makeCanvas(TW, H);
+  const put = (x, y, c) => { tbx.fillStyle = c; tbx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, tbx);
+  let seed = seed0;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // Sky, sun, clouds.
+  if (sunset) {
+    // Purple up high, through pink and orange, to gold at the horizon; a big sun sinking behind the city.
+    const BANDS = ['#2c2060', '#5a2c80', '#a03c88', '#e05c70', '#f88c50', '#ffc060'];
+    for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < TW; x++) {
+      const v = Math.min(BANDS.length - 1, y / 12 + bayer(x, y) - 0.5);
+      put(x, y, BANDS[Math.max(0, Math.floor(v))]);
+    }
+    const sunX = Math.round(TW * 0.6), sunY = 50;
+    for (let y = sunY - 30; y < sunY + 30; y++) for (let x = sunX - 30; x < sunX + 30; x++) {
+      const d = Math.hypot(x - sunX, y - sunY);
+      if (d < 18) put(x, y, d < 14 ? '#fff4b0' : '#ffd870');
+      else if (d < 28 && bayer(x, y) + 0.4 < (28 - d) / 10) put(x, y, '#ffb060');
+    }
+  } else {
+    for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < TW; x++)
+      put(x, y, bayer(x, y) > y / 110 - 0.5 ? '#5aa0e8' : '#8cc8ff');
+    const sunX = TW - 70;
+    for (let y = 4; y < 32; y++) for (let x = sunX - 14; x < sunX + 14; x++) {
+      const d = Math.hypot(x - sunX, y - 18);
+      if (d < 9) put(x, y, '#fff8c0'); else if (d < 13 && bayer(x, y) + 0.5 < (13 - d) / 4) put(x, y, '#fff0a0');
+    }
+  }
+  const clouds = [];
+  for (let x = 40; x < TW; x += 110 + Math.floor(rnd() * 60)) { const cy = 10 + Math.floor(rnd() * 12); clouds.push([x, cy, 7], [x + 12, cy + 3, 6]); }
+  for (const [cx, cy, r] of clouds)
+    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r * 2; x <= cx + r * 2; x++)
+      if (((x - cx) / 2) ** 2 + (y - cy) ** 2 <= r * r)
+        put(x, y, sunset ? (y > cy + r / 3 ? '#a04070' : '#ff9878') : y > cy + r / 3 ? '#d8e8f8' : '#ffffff');
+
+  // City skyline far away: two rows of hazy blue towers, the back row paler.
+  const tower = (x, w, top, body, edge, win, roofy) => {
+    for (let y = top; y < 104; y++) for (let xx = x; xx < x + w; xx++) {
+      const side = xx === x || xx === x + w - 1;
+      const window = y > top + 2 && (xx - x) % 3 === 1 && (y - top) % 4 === 1 && xx < x + w - 1;
+      put(xx, y, side || y === top ? edge : window ? win : body);
+    }
+    if (roofy === 0) for (let y = top - 7; y < top; y++) put(x + (w >> 1), y, edge);      // antenna
+    if (roofy === 1) for (let y = top - 4; y < top; y++)                                  // stepped top
+      for (let xx = x + 3; xx < x + w - 3; xx++) put(xx, y, y === top - 4 ? edge : body);
+  };
+  for (const [body, edge, win, minTop, span] of sunset ? [
+    ['#8a4880', '#783c70', '#b06090', 30, 34],   // far row, purple in the dusk
+    ['#58306a', '#48285a', '#f8c860', 44, 34],   // near row, with lights coming on
+  ] : [
+    ['#b4c8e8', '#a0b4d8', '#c8d8f0', 30, 34],   // far row
+    ['#8ca4d0', '#7890bc', '#b0c4e4', 44, 34],   // near row
+  ]) {
+    for (let x = -6; x < TW; ) {
+      const w = 12 + Math.floor(rnd() * 20), top = minTop + Math.floor(rnd() * span);
+      tower(x, w, top, body, edge, win, Math.floor(rnd() * 4));
+      x += w + (rnd() < 0.3 ? 4 : -2);
+    }
+  }
+
+  // Rolling green hills in front of the city.
+  for (let x = 0; x < TW; x++) {
+    const top = Math.round(94 + Math.sin(x / 41) * 5 + Math.sin(x / 13) * 2);
+    for (let y = top; y < FLOOR_Y; y++) put(x, y, y === top ? '#a8e088' : bayer(x, y) > (y - top) / 30 - 0.3 ? '#5ca848' : '#3c8034');
+  }
+  // A row of smaller houses up the hill behind the street (a bit hazy).
+  const BG_BASE = 116;
+  for (let x = 2; x < TW; ) {
+    const w = 26 + Math.floor(rnd() * 14), bodyH = 16 + Math.floor(rnd() * 8), top = BG_BASE - bodyH, cx = x + w / 2;
+    const roofH = Math.round(w * 0.3), half = w / 2 + 3, apex = top - roofH;
+    for (let y = top; y < BG_BASE; y++) for (let xx = x; xx < x + w; xx++)
+      put(xx, y, xx === x || xx === x + w - 1 ? '#8a94a8' : (y - top) % 4 === 3 ? '#c8d0e0' : xx > x + w - 4 ? '#d0d8e8' : '#eef2f8');
+    for (let y = apex; y <= top + 1; y++) for (let xx = Math.floor(cx - half); xx <= cx + half; xx++) {
+      const spread = (y - apex) / (roofH + 1) * half;
+      if (Math.abs(xx - cx) > spread) continue;
+      const edge = Math.abs(xx - cx) > spread - 1.2 || y === top + 1;
+      put(xx, y, edge ? '#5a2830' : (y - apex) % 3 === 2 ? '#a03c40' : xx < cx ? '#e06058' : '#c04848');
+    }
+    const win = (wx, wy) => {
+      for (let y = wy; y < wy + 5; y++) for (let xx = wx; xx < wx + 5; xx++) put(xx, y, xx === wx + 2 || y === wy + 2 ? '#e8f4ff' : '#7ca8d8');
+      for (let xx = wx - 1; xx < wx + 6; xx++) put(xx, wy + 5, '#48a048');
+    };
+    win(x + 4, top + 4); win(x + w - 9, top + 4);
+    for (let y = BG_BASE - 9; y < BG_BASE; y++) for (let xx = Math.round(cx) - 3; xx < Math.round(cx) + 3; xx++)
+      put(xx, y, y === BG_BASE - 9 ? '#5a3020' : '#9a5a38');
+    x += w + 8 + Math.floor(rnd() * 10);
+  }
+  // Lawn in front of the back row, with a dark hedge line.
+  for (let y = BG_BASE; y < FLOOR_Y; y++) for (let x = 0; x < TW; x++)
+    put(x, y, y === BG_BASE ? '#3c8034' : y < BG_BASE + 4 && bayer(x, y) > 0.4 ? '#2c6a2c' : bayer(x, y) > (y - BG_BASE) / 24 ? '#6cb850' : '#5ca848');
+
+  // Sidewalk and street.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < TW; x++) {
+    const ry = y - FLOOR_Y;
+    let c;
+    if (ry === 0) c = '#f0f0f8';
+    else if (ry === 1) c = '#101018';
+    else if (ry < 10) c = (x % 16 === 0) ? '#8a8a98' : bayer(x, y) > 0.3 ? '#b8b8c4' : '#c8c8d4';
+    else if (ry === 10) c = '#e0e0e8';
+    else if (ry === 11) c = '#101018';
+    else c = ry === 17 && x % 20 < 10 ? '#f8d040' : bayer(x, y) > 0.2 ? '#4a4a58' : '#3a3a46';
+    put(x, y, c);
+  }
+
+  const WHITE_RAMP = ['#9898a8', '#d0d0dc', '#ececf4', '#ffffff'];
+  const RED_ROOF = ['#4a0c0c', '#8a1c1c', '#c03030', '#f06048'];
+  const GREEN_SILL = ['#143c14', '#287028', '#40a840', '#80e080'];
+  const windowAt = (wx, wy) => {   // 16x16 window frame
+    sb(WHITE_RAMP, wx - 1, wy - 1, 18, 18, 0);
+    cbox(tbx, wx + 1, wy + 1, 14, 14, 0, (x, y) => (x - wx + y - wy) % 11 === 3 ? '#e8f8ff' : bayer(x, y) > 0.25 ? '#78b8f0' : '#a8d8ff');
+    for (let y = wy + 1; y < wy + 15; y++) put(wx + 8, y, '#ffffff');
+    for (let x = wx + 1; x < wx + 15; x++) put(x, wy + 8, '#ffffff');
+    sb(GREEN_SILL, wx - 3, wy + 16, 22, 4, 1);              // green window sill
+  };
+  for (const [hx, hw, stories, doorRamp] of houses) {
+    const bodyH = stories === 2 ? 92 : 60, top = FLOOR_Y - bodyH, cx = hx + hw / 2;
+    // Walls with clapboard siding.
+    sb(WHITE_RAMP, hx, top, hw, bodyH, 0);
+    for (let y = top + 6; y < FLOOR_Y - 2; y += 5) for (let x = hx + 2; x < hx + hw - 2; x++) put(x, y, '#d0d0dc');
+    // Red gable roof with shingle rows; left slope lit, right slope shaded.
+    const roofH = Math.min(28, Math.round(hw * 0.32)), half = hw / 2 + 6, apex = top - roofH;
+    // Chimney first so the roof overlaps its base.
+    sb(['#3a1410', '#6a2a20', '#9a4030', '#c86048'], hx + hw - 24, apex + 2, 10, roofH, 0);
+    for (let y = apex; y <= top + 2; y++) for (let x = Math.floor(cx - half); x <= cx + half; x++) {
+      const spread = (y - apex) / (roofH + 2) * half;
+      if (Math.abs(x - cx) > spread) continue;
+      const edge = Math.abs(x - cx) > spread - 1.2 || y === top + 2;
+      const shingle = (y - apex) % 4 === 3;
+      const ramp = RED_ROOF, lit = x < cx;
+      put(x, y, edge ? '#101018' : shingle ? ramp[0] : lit ? (bayer(x, y) > 0.3 ? ramp[3] : ramp[2]) : (bayer(x, y) > 0.3 ? ramp[2] : ramp[1]));
+    }
+    // Windows with green sills, front door, and a step.
+    const doorX = Math.round(cx - 9);
+    const lowY = FLOOR_Y - 46;
+    windowAt(hx + 10, lowY); windowAt(hx + hw - 26, lowY);
+    if (stories === 2) { windowAt(hx + 10, top + 10); windowAt(Math.round(cx - 8), top + 10); windowAt(hx + hw - 26, top + 10); }
+    sb(doorRamp, doorX, FLOOR_Y - 37, 18, 34, 1);
+    cbox(tbx, doorX + 4, FLOOR_Y - 32, 10, 8, 1, '#a8d8ff');
+    sb(doorRamp, doorX + 4, FLOOR_Y - 20, 10, 12, 1);       // door panel
+    put(doorX + 14, FLOOR_Y - 18, '#fff07a'); put(doorX + 14, FLOOR_Y - 17, '#a07c10');
+    sb(['#5a5a68', '#8a8a98', '#b8b8c4', '#e0e0e8'], doorX - 4, FLOOR_Y - 3, 26, 3, 0);
+  }
+  // White picket fences between the houses.
+  for (const [fx, fw] of fences) {
+    for (let x = fx; x < fx + fw; x++) { put(x, FLOOR_Y - 9, '#101018'); put(x, FLOOR_Y - 8, '#ffffff'); put(x, FLOOR_Y - 7, '#c8c8d4'); put(x, FLOOR_Y - 6, '#101018'); }
+    for (let x = fx + 1; x < fx + fw - 2; x += 5) sb(WHITE_RAMP, x, FLOOR_Y - 13, 4, 13, 0);
+  }
+  if (sunset) {
+    // Bathe the hills, houses and street in warm evening light.
+    tbx.globalCompositeOperation = 'multiply';
+    tbx.fillStyle = '#ffb890';
+    tbx.fillRect(0, 0, TW, H);
+    tbx.globalCompositeOperation = 'source-over';
+  }
+  const platforms = [
+    { x: 0, y: FLOOR_Y, w: TW },
+    ...houses.map(([hx, hw]) => ({ x: Math.round(hx + hw / 2 - 13), y: FLOOR_Y - 3, w: 26 })),  // door steps
+    ...fences.map(([fx, fw]) => ({ x: fx, y: FLOOR_Y - 13, w: fw })),                         // fence tops
+  ];
+  return [bg, platforms];
+}
+const [townBg, TOWN_PLATFORMS] = buildTown(TOWN_W, TOWN_HOUSES, TOWN_FENCES, 7);
+const [town2Bg, TOWN2_PLATFORMS] = buildTown(TOWN2_W, TOWN2_HOUSES, TOWN2_FENCES, 19);
+const [town3Bg, TOWN3_PLATFORMS] = buildTown(TOWN3_W, TOWN3_HOUSES, TOWN3_FENCES, 53, true);
+
+// ---------- The scientist (lab coat, glasses, wild gray hair) ----------
+const DOC_TOP = [
+  '...kkk.kkk....',
+  '..kGGGkGGGk...',
+  '.kGGyGGGGyGk..',
+  'kGGGGGGGGGGGk.',
+  'kGGksssssskGk.',
+  '.kGsssssssskk.',
+  '.kGskkkskkksk.',
+  '.kGskwkskwksk.',
+  '..kssssSssssk.',
+  '..ksssskkssk..',
+  '...kSsssssk...',
+  '....kSSSk.....',
+  '..kkwwcwwkk...',
+  'kwwwwwcwwwwwk.',
+  'kwykwwcwwkywk.',
+  'kwykwwcwwkywk.',
+  'kwykwwwwwkywk.',
+  'kwykwywywkywk.',
+  'kSskwwywwksSk.',
+  '.kkkwwwywwkkk.',
+  '...kwwwywwwk..',
+  '...kyyykyyyk..',
+];
+const DOC_STAND = sprite([...DOC_TOP,
+  '....kBBkBBk...',
+  '....kBBkBBk...',
+  '....kBBkBBk...',
+  '....kBBkBBk...',
+  '...kNNNkNNNk..',
+  '...kkkkkkkkk..',
+]);
+const DOC_WALK = sprite([...DOC_TOP,
+  '...kBBk.kBBk..',
+  '..kBBk...kBBk.',
+  '..kBk.....kBk.',
+  '..kBk.....kBk.',
+  '.kNNNk...kNNNk',
+  '.kkkkk...kkkkk',
+]);
+const doc = { room: 'town3', x: 840, flip: false, walkT: 0, moving: false };
+
+// ---------- The lab: a building at the end of the third street, and its inside ----------
+const STEEL = ['#2a3448', '#4a5670', '#7080a0', '#a0b0d0'];
+const HATCH = ['#0c1c4a', '#1c3a82', '#2c5ab4', '#5a88e0'];
+const LAB_X0 = 966, LAB_BW = 80, LAB_BH = 72;          // building on the street
+const LAB_DOOR_X = 988, LAB_DOOR_W = 20, LAB_DOOR_H = 36;
+let labDoorT = 0;                                         // 0 shut, 1 slid open
+const [labOut, lox] = makeCanvas(LAB_BW, LAB_BH);
+{
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, lox);
+  sb(STEEL, 0, 8, LAB_BW, LAB_BH - 8, 0);
+  sb(['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'], 0, 4, LAB_BW, 6, 0);       // roof trim
+  for (let x = 3; x < LAB_BW - 3; x++) for (const y of [30, 52]) { lox.fillStyle = '#2a3448'; lox.fillRect(x, y, 1, 1); }
+  // Sign.
+  sb(['#3a2a04', '#7a5a10', '#c8a030', '#f8e080'], 34, 14, 40, 13, 1);
+  lox.drawImage(textImg('LAB', { rows: ['#101018'], outline: null }), 44 - 3, 17 - 3);
+  // Round porthole windows glowing cyan.
+  for (const [wx, wy] of [[44, 40], [62, 40]]) for (let y = -5; y <= 5; y++) for (let x = -5; x <= 5; x++) {
+    const d = Math.hypot(x, y);
+    if (d > 5.4) continue;
+    lox.fillStyle = d > 4.2 ? '#101018' : d > 3.2 ? '#a0b0d0' : (x + y < -1 ? '#c8ffff' : bayer(x + 8, y + 8) > 0.5 ? '#40d0e0' : '#2090b0');
+    lox.fillRect(wx + x, wy + y, 1, 1);
+  }
+  // Door frame (the door panel itself is drawn live so it can slide).
+  sb(['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'], LAB_DOOR_X - LAB_X0 - 3, LAB_BH - LAB_DOOR_H - 4, LAB_DOOR_W + 6, LAB_DOOR_H + 4, 0);
+  lox.fillStyle = '#40e0ff'; lox.fillRect(LAB_DOOR_X - LAB_X0 + 7, LAB_BH - LAB_DOOR_H - 3, 6, 1);   // light over the door
+}
+function drawLabOutside() {
+  if (room !== 'town3') return;
+  const x0 = Math.round(LAB_X0 - camX), y0 = FLOOR_Y - LAB_BH;
+  if (x0 > W || x0 + LAB_BW < 0) return;
+  ctx.drawImage(labOut, x0, y0);
+  const dx = Math.round(LAB_DOOR_X - camX), dy = FLOOR_Y - LAB_DOOR_H;
+  // Dark inside with a little cyan light, then the door sliding up.
+  ctx.fillStyle = '#06080e'; ctx.fillRect(dx, dy, LAB_DOOR_W, LAB_DOOR_H);
+  ctx.fillStyle = '#103040'; ctx.fillRect(dx + 2, dy + 2, LAB_DOOR_W - 4, 3);
+  const h = Math.round(LAB_DOOR_H * (1 - labDoorT));
+  if (h > 2) {
+    cbox(ctx, dx, dy, LAB_DOOR_W, h, 0, bevel(HATCH, dx, dy, LAB_DOOR_W, h));
+    ctx.fillStyle = '#101018'; ctx.fillRect(dx + 9, dy, 2, h);
+  }
+}
+// The wall to the right of the door, redrawn in front of anyone walking in.
+function drawLabWallFront() {
+  const cut = LAB_DOOR_X + LAB_DOOR_W - LAB_X0;
+  ctx.drawImage(labOut, cut, 0, LAB_BW - cut, LAB_BH, Math.round(LAB_X0 + cut - camX), FLOOR_Y - LAB_BH, LAB_BW - cut, LAB_BH);
+}
+
+const LAB_W = 320, LAB_IN_DOOR_X = 16;
+const [labBg, lbx] = makeCanvas(LAB_W, H);
+{
+  const put = (x, y, c) => { lbx.fillStyle = c; lbx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, lbx);
+  // Metal wall panels with seams and rivets.
+  for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < LAB_W; x++) {
+    const px = x % 40;
+    let c = bayer(x, y) > y / FLOOR_Y ? '#1c2438' : '#24304a';
+    if (px === 0 || y === 46 || y === 96) c = '#0a0e18';
+    else if (px === 1 || y === 47 || y === 97) c = '#3a4864';
+    else if ((px === 4 || px === 36) && (y === 51 || y === 92 || y === 101 || y === 131)) c = '#6a7a9a';
+    put(x, y, c);
+  }
+  // Ceiling with pipes.
+  for (let y = 0; y < 14; y++) for (let x = 0; x < LAB_W; x++) put(x, y, y === 13 ? '#0a0e18' : '#121826');
+  sb(['#0c2a30', '#185058', '#2a8088', '#58c0c8'], -2, 3, LAB_W + 4, 5, 0);
+  sb(STEEL, -2, 9, LAB_W + 4, 3, 0);
+  // Hanging lamps with soft light.
+  for (const lx of [70, 170, 270]) {
+    for (let y = 18; y < 70; y++) {
+      const half = 4 + (y - 18) * 0.45;
+      for (let x = Math.floor(lx - half); x <= lx + half; x++)
+        if (bayer(x, y) < 0.35 * (1 - (y - 18) / 52)) put(x, y, '#3a4a6c');
+    }
+    sb(STEEL, lx - 1, 12, 3, 4, 0);
+    sb(['#8a7a20', '#c8b040', '#f8e080', '#fffff0'], lx - 5, 15, 11, 4, 1);
+  }
+  // Grated metal floor.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < LAB_W; x++) {
+    const ry = y - FLOOR_Y;
+    put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : (x % 6 === 0 || ry % 6 === 1) ? '#22293a' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
+  }
+  // Blue hatch door on the left (back out to the street).
+  sb(['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'], 4, FLOOR_Y - 40, 24, 40, 0);
+  sb(HATCH, 7, FLOOR_Y - 36, 18, 36, 1);
+  for (let y = FLOOR_Y - 36; y < FLOOR_Y; y++) { put(15, y, '#101018'); put(16, y, '#101018'); }
+  for (let x = 11; x < 21; x++) put(x, FLOOR_Y - 39, '#40e0ff');
+  // Computer console with a green screen.
+  const consoleAt = (x, w) => {
+    sb(STEEL, x, FLOOR_Y - 18, w, 18, 1);
+    sb(['#101420', '#1a2030', '#2a3448', '#4a5670'], x + 4, FLOOR_Y - 46, w - 8, 26, 1);
+    for (let y = FLOOR_Y - 42; y < FLOOR_Y - 24; y++) for (let xx = x + 7; xx < x + w - 7; xx++) put(xx, y, bayer(xx, y) > 0.8 ? '#104a20' : '#0a3a1a');
+    for (let r = 0; r < 4; r++) {
+      const len = 6 + ((x * 7 + r * 13) % (w - 22));
+      for (let xx = 0; xx < len; xx++) put(x + 9 + xx, FLOOR_Y - 40 + r * 4, '#40e060');
+    }
+    [['#ff4040', 6], ['#40e040', 10], ['#f8d040', 14]].forEach(([c, ox]) => { put(x + ox, FLOOR_Y - 13, c); put(x + ox + 1, FLOOR_Y - 13, c); });
+    for (let xx = x + w - 20; xx < x + w - 6; xx += 2) put(xx, FLOOR_Y - 12, '#a0b0d0');
+  };
+  consoleAt(42, 44);
+  consoleAt(160, 56);
+  // Glass tubes of bubbling green goo (one has a pig in it).
+  for (const [tx, pig] of [[100, true], [128, false]]) {
+    sb(STEEL, tx, 46, 22, 8, 1);
+    sb(STEEL, tx, FLOOR_Y - 10, 22, 10, 1);
+    for (let y = 54; y < FLOOR_Y - 10; y++) for (let x = tx + 2; x < tx + 20; x++) {
+      const lx = x - tx;
+      put(x, y, lx === 2 || lx === 19 ? '#0e3a20' : lx === 4 || lx === 5 ? '#c8ffd8' : y < 60 ? '#1a5a38' : bayer(x, y) > 0.5 ? '#30c060' : '#20a050');
+    }
+    if (pig) lbx.drawImage(SPR.pig, tx + 4, 84);
+    for (const [bx, by] of [[9, 70], [14, 104], [8, 116], [15, 64], [11, 90]]) { put(tx + bx, by, '#a0ffc0'); put(tx + bx + 1, by - 1, '#e0fff0'); }
+  }
+  // A big portal-ring machine, like the one in the alley.
+  const RX = 278, RY = 90, RO = 28, RI = 20;
+  for (let y = RY - RO; y <= RY + RO; y++) for (let x = RX - RO; x <= RX + RO; x++) {
+    const d = Math.hypot(x - RX, y - RY);
+    if (d > RO) continue;
+    if (d < RI) { put(x, y, bayer(x, y) < 0.3 + Math.sin(Math.atan2(y - RY, x - RX) * 3 + d * 0.4) * 0.2 ? '#7030c0' : '#20103a'); continue; }
+    const edge = d > RO - 1 || d < RI + 1;
+    const lit = (x - RX) + (y - RY) < 0;
+    put(x, y, edge ? '#101018' : lit ? (bayer(x, y) > 0.4 ? STEEL[3] : STEEL[2]) : (bayer(x, y) > 0.4 ? STEEL[1] : STEEL[2]));
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    put(Math.round(RX + Math.cos(a) * 24), Math.round(RY + Math.sin(a) * 24), '#f8e080');
+  }
+  sb(STEEL, RX - 22, FLOOR_Y - 16, 44, 16, 1);
+  put(RX - 8, FLOOR_Y - 9, '#ff3030'); put(RX - 7, FLOOR_Y - 9, '#ff3030');
+  put(RX + 6, FLOOR_Y - 9, '#40e040'); put(RX + 7, FLOOR_Y - 9, '#40e040');
+}
+const LAB_PLATFORMS = [
+  { x: 0, y: FLOOR_Y, w: LAB_W },
+  { x: 42, y: FLOOR_Y - 18, w: 44 },     // consoles
+  { x: 160, y: FLOOR_Y - 18, w: 56 },
+  { x: 100, y: 46, w: 22 },              // tube tops
+  { x: 128, y: 46, w: 22 },
+  { x: 256, y: FLOOR_Y - 16, w: 44 },    // ring machine base
+];
+
+// ---------- Floating people (third neighborhood) ----------
+// People frozen in midair, arms up and mouths open.
+function floaterSprite(over) {
+  const save = { ...PAL };
+  Object.assign(PAL, over);
+  const img = sprite([
+    '.kkk........kkk.',
+    '.ksk..kkkk..ksk.',
+    '.ksk.knnnnk.ksk.',
+    '.krkknnnnnnkkrk.',
+    '.krkknsssssk' + 'krk.',
+    '.krkkskssksk' + 'krk.',
+    '.krkkssssssk' + 'krk.',
+    '.krkksskkssk' + 'krk.',
+    '.krkkskPPksk' + 'krk.',
+    '.krkksskkssk' + 'krk.',
+    '.krk.kssssk.krk.',
+    '.kqrrrrrrrrrrRk.',
+    '..kqrrrrrrrrRk..',
+    '...kqrrrrrrRk...',
+    '...kqrrrrrrRk...',
+    '...kqrrrrrrRk...',
+    '...kbubbbbbBk...',
+    '..kbubk..kbbBk..',
+    '..kbuk....kbBk..',
+    '.kbuk......kbBk.',
+    '.kbuk......kbBk.',
+    'kbuk........kbBk',
+    'kwwk........kwwk',
+    'kGGk........kGGk',
+    'kkkk........kkkk',
+  ]);
+  Object.keys(PAL).forEach(k => delete PAL[k]);
+  Object.assign(PAL, save);
+  return img;
+}
+const FLOATER_LOOKS = [
+  { n: '#e8c050', r: '#40a040', R: '#206020', q: '#80e080' },                                   // blond, green shirt
+  { n: '#2a2a30', s: '#c08050', S: '#8a5030', r: '#9048c0', R: '#602c88', q: '#c088f0' },      // purple shirt
+  { n: '#c05020', r: '#f0c020', R: '#a07810', q: '#fff080', b: '#505868', B: '#303040', u: '#8890a0' },
+  { n: '#6a4a30', s: '#8a5a38', S: '#5a3820', r: '#3080d0', R: '#1c4c90', q: '#80c0ff' },
+  { n: '#d0d0d8', r: '#e08040', R: '#a05020', q: '#ffc080' },                                   // grandpa
+].map(floaterSprite);
+// [x, height above the ground, look]
+const FLOATERS = [[150, 62, 0], [270, 88, 1], [390, 50, 2], [520, 80, 3], [650, 58, 4], [700, 92, 0]];
+function drawFloaters() {
+  FLOATERS.forEach(([fx, fh, look]) => {
+    const img = FLOATER_LOOKS[look];
+    const sx = Math.round(fx - camX);
+    if (sx < -30 || sx > W + 30) return;
+    const footY = FLOOR_Y - fh;
+    // Shadow on the sidewalk, smaller the higher they float.
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#101018';
+    const sw = Math.max(4, 14 - fh / 10);
+    ctx.fillRect(Math.round(sx - sw / 2), FLOOR_Y - 1, Math.round(sw), 2);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(img, sx - 8, footY - img.height);
+  });
+}
+
+const ROOMS = {
+  living:  { bg: levelBg,   w: LEVEL_W,   platforms: PLATFORMS,         rightWall: EXIT_X - 6 },
+  alley:   { bg: alleyBg,   w: ALLEY_W,   platforms: ALLEY_PLATFORMS,   rightWall: ALLEY_W - 6 },
+  town:    { bg: townBg,    w: TOWN_W,    platforms: TOWN_PLATFORMS,    rightWall: TOWN_W - 6,  right: 'town2' },
+  town2:   { bg: town2Bg,   w: TOWN2_W,   platforms: TOWN2_PLATFORMS,   rightWall: TOWN2_W - 6, left: 'town', right: 'town3' },
+  town3:   { bg: town3Bg,   w: TOWN3_W,   platforms: TOWN3_PLATFORMS,   rightWall: TOWN3_W - 6, left: 'town2' },
+  lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6 },
+};
+let room = 'living';
+const curRoom = () => ROOMS[room];
+
+
 
 function drawChar(img, x, footY, flip) {
   ctx.save();
@@ -922,6 +1864,15 @@ function wrapText(text, max) {
 
 // Prehistoric Peril-style caption: dark see-through box at the top, gold text, speaker on top.
 const GOLD = { rows: ['#fff0a0', '#f8d040', '#e0a820'], outline: '#000000' };
+// Dialogue waits for Enter once a box has finished typing.
+let enterQueued = false;
+function lineDone(shown, len) {
+  if (shown < len) { enterQueued = false; return false; }   // no pressing ahead while it types
+  const go = enterQueued;
+  enterQueued = false;
+  if (go) sfx.blip();
+  return go;
+}
 function drawCaption(speaker, text, shown) {
   const lines = wrapText(text, 34);
   const w = W - 16, h = lines.length * 10 + 20;
@@ -937,21 +1888,182 @@ function drawCaption(speaker, text, shown) {
     const img = textImg(line, GOLD);
     ctx.drawImage(img, 0, 0, 3 + n * 6, img.height, 16 - 3, 20 + i * 10 - 3, 3 + n * 6, img.height);
   });
+  if (shown >= text.length && Math.floor(performance.now() / 300) % 2) {
+    // Blinking arrow: press Enter.
+    const ax = 8 + w - 14, ay = 4 + h - 10;
+    ctx.fillStyle = '#f8d040';
+    for (let r = 0; r < 4; r++) ctx.fillRect(ax + r, ay + r, 7 - r * 2, 1);
+  }
 }
 
 // Metroid Fusion-style minimap in the corner.
 function drawHUD(now) {
-  // Minimap: this room (lit) and the town beyond the locked exit.
-  const mx = W - 30, my = 2;
-  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 30, 14);
-  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 28, 12);
-  ctx.fillStyle = '#e858a8'; ctx.fillRect(mx + 2, my + 3, 14, 6);
-  ctx.fillStyle = '#304890'; ctx.fillRect(mx + 18, my + 3, 8, 6);
-  ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 16, my + 5, 2, 2);
-  if (Math.floor(now / 300) % 2) {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(mx + 3 + Math.round(player.x / LEVEL_W * 12), my + 5, 2, 2);
+  // Minimap: the alley, the living room, and the town beyond the locked door. Current room is lit.
+  const mx = W - 74, my = 2;
+  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 74, 14);
+  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 72, 12);
+  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7]];
+  for (const [name, cx, cw] of cells) {
+    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name === 'lab' ? '#304890' : '#4870c0';
+    ctx.fillRect(mx + cx, my + 3, cw, 6);
   }
+  ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 26, my + 5, 2, 2);
+  if (Math.floor(now / 300) % 2) {
+    const [, cx, cw] = cells.find(c => c[0] === room);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(mx + cx + Math.round(player.x / curRoom().w * (cw - 2)), my + 5, 2, 2);
+  }
+}
+
+// ---------- Interacting (E) ----------
+// The trash bag sits on the coffee table. Walk up to it and press E to pick it up.
+const BAG = sprite([
+  '....kk......kk....',
+  '....kZk....kZk....',
+  '.....kZk..kZk.....',
+  '......kZkkZk......',
+  '.......kZZk.......',
+  '.......kzzk.......',
+  '......kZxzzk......',
+  '.....kZxxzzzk.....',
+  '....kZxxzzzzzk....',
+  '...kZxxzzzzzzzk...',
+  '..kZxxzzzzzzzzzk..',
+  '.kZxxzzzzzzzzzzzk.',
+  'kZxxzzzzzzzzzzZzzk',
+  'kZxzzzzzzzzzzzZzzk',
+  'kZxzzzzzzzzzzZzzzk',
+  'kZzzzzzzzzzzzzzzzk',
+  'kzzzzzzzzzzzzzzzzk',
+  '.kzzzzzzzzzzzzzzk.',
+  '..kkkkkkkkkkkkkk..',
+]);
+const TRASH = { x: 131, y: 118, taken: false };
+let toast = null;                     // centered message: { text, until }
+function showToast(text) { toast = { text, until: performance.now() + 2200 }; }
+
+const INTERACTABLES = [
+  { room: 'living', x: () => TRASH.x, y: TRASH.y, iconY: TRASH.y - 32, active: () => !TRASH.taken,
+    use: () => {
+      TRASH.taken = true;
+      player.carrying = true;
+      sfx.pickup();
+      burst(TRASH.x, TRASH.y - 6, ['#6a6a88', '#a8c8e0', '#ffffff'], 10, 40);
+    } },
+  { room: 'living', x: () => EXIT_X - 6, y: FLOOR_Y, iconY: 96, active: () => true,
+    use: () => { sfx.locked(); showToast("THE DOOR IS LOCKED."); }, lockedOnly: true },
+  { room: 'living', x: () => LIVING_DOOR_X, y: FLOOR_Y, iconY: 76, active: () => true,
+    use: () => goThrough('alley', ALLEY_DOOR_X, true) },
+  { room: 'alley', x: () => DUMPSTER_X, y: FLOOR_Y, range: 36, iconY: 58, active: () => player.carrying && !thrown,
+    use: throwTrash },
+  { room: 'town', x: () => TOWN_HOME_X, y: FLOOR_Y, iconY: 88, active: () => true,
+    use: () => goThrough('living', EXIT_X - 14, true) },
+  { room: 'town3', x: () => LAB_DOOR_X + LAB_DOOR_W / 2, y: FLOOR_Y, iconY: 84, active: () => bossDone,
+    use: () => goThrough('lab', LAB_IN_DOOR_X + 18, false) },
+  { room: 'lab', x: () => LAB_IN_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
+    use: () => {
+      if (labTalked) { sfx.locked(); showToast("IT'S NOT SAFE OUT THERE."); }
+      else goThrough('town3', LAB_DOOR_X - 10, true);
+    } },
+  { room: 'alley', x: () => ALLEY_DOOR_X, y: FLOOR_Y, iconY: 76, active: () => true,
+    use: () => goThrough('living', LIVING_DOOR_X, false) },
+];
+function nearbyInteractable() {
+  if (doorT) return null;
+  return INTERACTABLES.find(it => it.room === room && it.active() && !(it.lockedOnly && exitOpen) &&
+    Math.abs(player.x - it.x()) < (it.range ?? 14) && Math.abs(player.y - it.y) < 22);
+}
+
+// Going through a door: quick fade to black, swap rooms, fade back in.
+let doorT = null;
+
+// Taking out the trash: toss the bag in an arc into the dumpster; the lid flaps.
+const DUMPSTER_X = 148;
+let thrown = null, lidT = 0, trashDone = false, ringSceneIn = 0;
+function throwTrash() {
+  const p = player;
+  p.carrying = false;
+  p.flip = p.x > DUMPSTER_X;
+  sfx.whoosh();
+  thrown = { x0: p.x + (p.flip ? -6 : 6), y0: p.y - 28, x1: DUMPSTER_X, y1: 100, t: 0 };
+}
+function updateThrow(dt) {
+  lidT = Math.max(0, lidT - dt);
+  if (ringSceneIn > 0 && (ringSceneIn -= dt) <= 0) startRingScene();
+  if (!thrown) return;
+  thrown.t += dt;
+  if (thrown.t >= 0.5) {
+    thrown = null;
+    trashDone = true;
+    ringSceneIn = 0.8;
+    lidT = 0.35;
+    sfx.clang();
+    burst(DUMPSTER_X, 98, ['#6a6a88', '#5cb070', '#ffffff'], 12, 50);
+  }
+}
+function drawThrow() {
+  if (lidT > 0) {
+    // Lid bounces open: lift the lid and show the dark inside.
+    const lift = Math.round(Math.sin(lidT / 0.35 * Math.PI) * 5);
+    ctx.fillStyle = '#06060a';
+    ctx.fillRect(Math.round(119 - camX), 99 - lift, 58, lift + 5);
+    ctx.drawImage(alleyBg, 117, 98, 62, 7, Math.round(117 - camX), 98 - lift - 2, 62, 7);
+  }
+  if (!thrown) return;
+  const k = thrown.t / 0.5;
+  const x = thrown.x0 + (thrown.x1 - thrown.x0) * k;
+  const y = thrown.y0 + (thrown.y1 - thrown.y0) * k - Math.sin(k * Math.PI) * 26;
+  ctx.save();
+  ctx.translate(Math.round(x - camX), Math.round(y));
+  ctx.rotate(k * Math.PI * 1.5 * (thrown.x1 > thrown.x0 ? 1 : -1));
+  ctx.drawImage(BAG, -9, -10);
+  ctx.restore();
+}
+function goThrough(to, x, flip, doorSound = true) {
+  if (doorT) return;
+  doorT = { t: 0, to, x, flip };
+  if (doorSound) sfx.door();
+}
+function updateDoor(dt) {
+  doorT.t += dt;
+  if (doorT.t < 0.25) return;
+  room = doorT.to;
+  mom = null;
+  Object.assign(player, { x: doorT.x, y: FLOOR_Y, vx: 0, vy: 0, onGround: true, flip: doorT.flip });
+  camX = Math.max(0, Math.min(curRoom().w - W, player.x - W / 2));
+  doorT = null;
+  fadeInT = 0.4;
+  if (room === 'lab' && !labTalked) startLabScene();
+  // Once the trash is out, Mom is waiting in the living room.
+  if (room === 'living' && trashDone) {
+    mom = { x: MOM_WAIT_X, y: FLOOR_Y, flip: true, walkT: 0, moving: false };
+    if (!momPraised) startPraiseScene();
+  }
+}
+function interact() {
+  const it = nearbyInteractable();
+  if (it) it.use();
+}
+
+// Bobbing "E" key icon over whatever you can use.
+function drawInteractPrompt(now) {
+  const it = nearbyInteractable();
+  if (!it) return;
+  const x = Math.round(it.x() - camX) - 5, y = it.iconY + Math.round(Math.sin(now / 160));
+  ctx.fillStyle = '#101018'; ctx.fillRect(x, y, 11, 11);
+  ctx.fillStyle = '#f0f0f8'; ctx.fillRect(x + 1, y + 1, 9, 8);
+  ctx.fillStyle = '#a0a8b8'; ctx.fillRect(x + 1, y + 9, 9, 1);
+  drawAt(textImg('E', INK), x + 3, y + 2);
+}
+
+function drawToast(now) {
+  if (!toast || now > toast.until) { toast = null; return; }
+  const img = textImg(toast.text, GOLD);
+  const w = img.width + 10, h = 19;
+  ctx.globalAlpha = 0.8;
+  ctx.drawImage(panel(w, h, '#06060e', 3), Math.round((W - w) / 2), 52);
+  ctx.globalAlpha = 1;
+  drawCentered(img, W / 2, 58);
 }
 
 // ---------- Particles (dust puffs, sparks) ----------
@@ -982,13 +2094,19 @@ let cut, player, mom, camX = 0, held = new Set(), hintUntil = 0, fadeInT = 0;
 
 function makePlayer() {
   return { x: COUCH_X, y: FLOOR_Y, vx: 0, vy: 0, onGround: true, sitting: true, flip: false,
-           walkT: 0, hp: 5, maxHp: 5, hurtT: 0 };
+           walkT: 0, hp: 5, maxHp: 5, hurtT: 0, carrying: false };
 }
 
 function startCutscene() {
   state = 'cutscene';
   camX = 0;
   particles = [];
+  TRASH.taken = false;
+  thrown = null; lidT = 0; trashDone = false; ringSceneIn = 0; ringScene = null;
+  momPraised = false; exitOpen = false; exitOpenT = 0; praise = null;
+  toast = null;
+  room = 'living';
+  doorT = null;
   cut = { phase: 'fade', t: 0, speaker: '', text: '', shown: 0, hold: 0 };
   player = makePlayer();
   mom = { x: -10, y: FLOOR_Y, flip: false, walkT: 0, moving: false };
@@ -1007,6 +2125,7 @@ function beginPlay() {
   player.vy = JUMP_VEL * 0.5;        // hops off the couch
   player.onGround = false;
   burst(player.x, FLOOR_Y, DUST, 6, 25);
+  sfx.jump();
   if (mom) { mom.x = Math.max(mom.x, 40); mom.leaving = true; }
   fadeInT = 0.4;
   hintUntil = performance.now() + 4500;
@@ -1017,14 +2136,17 @@ function updateCutscene(dt) {
   if (cut.phase === 'fade' && cut.t > 0.8) { cut.phase = 'momIn'; cut.t = 0; }
   else if (cut.phase === 'momIn') {
     mom.x += WALK_SPEED * dt; mom.walkT += dt; mom.moving = true;
+    momSteps(mom);
     if (mom.x >= MOM_STOP) {
       mom.x = MOM_STOP; mom.moving = false;
       say('MOM', `HEY ${playerName}, WHY DON'T YOU GET OFF YOUR BUTT AND TAKE OUT THE TRASH?`, 2.5);
     }
   } else if (cut.phase === 'talk') {
     mom.moving = false;
+    const prev = cut.shown;
     cut.shown = Math.min(cut.text.length, cut.t * 30);
-    if (cut.shown >= cut.text.length && cut.t > cut.text.length / 30 + cut.hold) {
+    voiceBlips(prev, cut.shown, cut.text, cut.speaker === 'MOM');
+    if (lineDone(cut.shown, cut.text.length)) {
       if (cut.speaker === 'MOM') say(playerName, 'OK MOM', 1.4);
       else { cut.phase = 'outro'; cut.t = 0; }
     }
@@ -1047,69 +2169,104 @@ function hurt(dir) {
 
 function updatePlay(dt) {
   const p = player;
+  if (doorT) { updateDoor(dt); updateParticles(0); return; }
+  updateThrow(dt);
   const left = held.has('ArrowLeft'), right = held.has('ArrowRight');
   if (p.hurtT > 0.9) { /* knocked back: no control for a moment */ }
   else if (left && !right) { p.vx = -RUN_SPEED; p.flip = true; }
   else if (right && !left) { p.vx = RUN_SPEED; p.flip = false; }
   else p.vx *= Math.pow(0.65, dt * 60);
-  if (held.has('ArrowUp') && p.onGround) {
+  if ((held.has('ArrowUp') || held.has('Space')) && p.onGround) {
     p.vy = JUMP_VEL;
     p.onGround = false;
     burst(p.x, p.y, DUST, 5, 25);
+    sfx.jump();
   }
   p.hurtT = Math.max(0, p.hurtT - dt);
 
   p.vy += GRAVITY * dt;
   const prevY = p.y;
   // The door to town is locked, so it works as a wall.
-  p.x = Math.max(6, Math.min(EXIT_X - 6, p.x + p.vx * dt));
+  const rightWall = room === 'living' && exitOpen ? LEVEL_W - 6 : curRoom().rightWall;
+  p.x = Math.max(6, Math.min(rightWall, p.x + p.vx * dt));
+  // Walking into the open front door takes you out into town.
+  if (room === 'living' && exitOpen && p.x >= LEVEL_W - 8) goThrough('town', TOWN_HOME_X + 14, false);
+  // Getting close to the scientist at the end of the third street starts his scene.
+  if (room === 'town3' && !bossDone && !doorT && p.x >= SCI_X - 90) { startBossScene(); return; }
+  // Walking off either end of a street takes you to the next neighborhood.
+  if (curRoom().right && p.x >= curRoom().rightWall) goThrough(curRoom().right, 14, false, false);
+  else if (curRoom().left && p.x <= 6) goThrough(curRoom().left, ROOMS[curRoom().left].w - 14, true, false);
   p.y += p.vy * dt;
   const wasOnGround = p.onGround;
   p.onGround = false;
   if (p.vy >= 0) {
     // Land on the highest one-way platform we crossed this frame.
     let best = null;
-    for (const pl of PLATFORMS)
+    for (const pl of curRoom().platforms)
       if (p.x + 3 > pl.x && p.x - 3 < pl.x + pl.w && prevY <= pl.y + 0.5 && p.y >= pl.y && (!best || pl.y < best.y)) best = pl;
     if (best) {
       p.y = best.y;
-      if (!wasOnGround && p.vy > 150) burst(p.x, p.y, DUST, 4, 25);
+      if (!wasOnGround && p.vy > 150) { burst(p.x, p.y, DUST, 4, 25); sfx.land(); }
       p.vy = 0;
       p.onGround = true;
     }
   }
-  if (p.onGround && Math.abs(p.vx) > 5) p.walkT += dt;
+  if (p.onGround && Math.abs(p.vx) > 5) { p.walkT += dt; guySteps(p); }
 
 
   if (mom && mom.leaving) {
     mom.x -= WALK_SPEED * dt; mom.walkT += dt; mom.moving = true; mom.flip = true;
-    if (mom.x < 27) mom = null;     // out through the door
+    momSteps(mom);
+    if (mom.x < LIVING_DOOR_X) mom = null;     // out through the door
   }
 
   // Camera: follow with a lead, eased, clamped to the level.
-  const target = Math.max(0, Math.min(LEVEL_W - W, p.x - W * 0.35));
+  const target = Math.max(0, Math.min(curRoom().w - W, p.x - W * 0.35));
   camX += (target - camX) * (1 - Math.pow(0.9, dt * 60));
 }
 
 function renderLevel(now) {
   const cx = Math.round(camX);
-  ctx.drawImage(levelBg, cx, 0, W, H, 0, 0, W, H);
+  if (room === 'town3' && (portalOn || (boss && boss.twist > 0))) drawPortalBg(now, portalOn ? 1 : boss.twist);
+  else ctx.drawImage(curRoom().bg, cx, 0, W, H, 0, 0, W, H);
+  if (room === 'living') drawExitOpen();
+  if (room === 'living' && !TRASH.taken) ctx.drawImage(BAG, Math.round(TRASH.x - camX) - 9, TRASH.y - BAG.height);
+  if (room === 'alley')
+    ALLEY_BAGS.forEach(([bx, by], i) => {
+      ctx.save();
+      ctx.translate(Math.round(bx - camX), by);
+      if (i % 2) ctx.scale(-1, 1);
+      ctx.drawImage(BAG, -9, -BAG.height);
+      ctx.restore();
+    });
   const chars = [];
   if (mom) chars.push({ img: mom.moving && Math.floor(mom.walkT / 0.15) % 2 ? MOM_WALK : MOM_STAND, ...mom });
   const p = player;
   const blinking = p.hurtT > 0 && Math.floor(p.hurtT * 12) % 2;
   if (!blinking) {
-    const img = p.sitting ? GUY_SIT : !p.onGround || (Math.abs(p.vx) > 5 && Math.floor(p.walkT / 0.12) % 2) ? GUY_WALK : GUY_STAND;
-    chars.push({ img, ...p, y: p.sitting ? FLOOR_Y - 4 : p.y });
+    let img = GUY_STAND;
+    if (p.pose === 'reach') img = GUY_REACH;
+    else if (p.sitting) img = GUY_SIT;
+    else if (!p.onGround) img = GUY_JUMP;
+    else if (Math.abs(p.vx) > 5) {
+      const f = Math.floor(p.walkT / 0.08) % GUY_WALK_FRAMES.length;
+      img = GUY_WALK_FRAMES[f];
+    }
+    if (p.flash) img = flashSprite(img);
+    chars.push({ img, ...p, x: p.x + (p.shakeX || 0), y: p.sitting ? FLOOR_Y - 4 : p.y });
+    // Carried trash bag slung over his shoulder, behind his head.
+    if (p.carrying) ctx.drawImage(BAG, Math.round(p.x - camX + (p.flip ? -1 : -17)), Math.round(p.y - 34));
   }
+  if (room === 'town3') { drawFloaters(); drawLabOutside(); drawSci(); }
+  if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
   chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
+  if (state === 'boss' && boss.phase === 'toLab') drawLabWallFront();
+  if (room === 'alley') drawThrow();
+  if (room === 'living') drawDaylight();
   drawParticles();
 
   if (state === 'cutscene') {
     if (cut.phase === 'talk') drawCaption(cut.speaker, cut.text, Math.floor(cut.shown));
-    ctx.globalAlpha = 0.6;
-    drawCentered(textImg('PRESS ANY KEY TO SKIP', { rows: ['#c8a862'], outline: '#000000' }), W / 2, 150);
-    ctx.globalAlpha = 1;
     // Stepped fades in and out of black.
     const fade = cut.phase === 'fade' ? 1 - cut.t / 0.8 : cut.phase === 'outro' ? cut.t / 0.5 : 0;
     if (fade > 0) {
@@ -1118,9 +2275,25 @@ function renderLevel(now) {
       ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
     }
+  } else if (state === 'praise') {
+    drawPraiseScene();
+  } else if (state === 'ringScene') {
+    drawRingScene(now);
+  } else if (state === 'boss') {
+    drawBossScene();
+  } else if (state === 'labScene') {
+    drawLabScene();
   } else {
+    drawInteractPrompt(now);
+    drawToast(now);
     drawHUD(now);
-    if (now < hintUntil) drawCentered(textImg('ARROWS: MOVE   UP: JUMP', GOLD), W / 2, 30);
+    if (now < hintUntil) drawCentered(textImg('ARROWS: MOVE SPACE: JUMP E: USE', GOLD), W / 2, 30);
+    if (doorT) {
+      ctx.globalAlpha = Math.min(1, Math.ceil(doorT.t / 0.25 * 4) / 4);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
     if (fadeInT > 0) {
       ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
       ctx.fillStyle = '#000';
@@ -1130,8 +2303,624 @@ function renderLevel(now) {
   }
 }
 
+// ---------- The Lord of Dimensions (end of the third street) ----------
+// A super buff scientist with galaxy skin, four arms, a purple hat, a dark blue
+// bandana, beige pants and a golden staff. Built from shaded shapes, so every
+// muscle gets its own outline.
+const SCI_X = 880;                         // where he stands
+const SCI_W = 112, SCI_H = 102;            // sprite canvas
+const SCI_OX = 6, SCI_OY = 34;             // body coords -> canvas (feet at body y 67)
+function sciBody(raised) {
+  const ell = (cx, cy, rx, ry) => (x, y) => {
+    const u = (x - cx) / rx, v = (y - cy) / ry;
+    return u * u + v * v <= 1 ? [u, v] : null;
+  };
+  const sq = (cx, cy, rx, ry) => (x, y) => {      // squarish blob (for pecs and abs)
+    const u = (x - cx) / rx, v = (y - cy) / ry;
+    return u ** 4 + v ** 4 <= 1 ? [u * u * u, v * v * v] : null;
+  };
+  const cap = (x1, y1, x2, y2, r1, r2 = r1) => (x, y) => {   // tapered limb
+    const dx = x2 - x1, dy = y2 - y1;
+    const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)));
+    const r = r1 + (r2 - r1) * t, ex = x - (x1 + dx * t), ey = y - (y1 + dy * t);
+    return ex * ex + ey * ey <= r * r ? [ex / r, ey / r] : null;
+  };
+  const and = (a, b) => (x, y) => b(x, y) && a(x, y);
+  const or = (...fs) => (x, y) => { for (const f of fs) { const n = f(x, y); if (n) return n; } return null; };
+
+  const hash = (x, y) => { const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return h - Math.floor(h); };
+  const GAL = ['#100a2c', '#281860', '#4430a0', '#7058d8'];
+  const NEB = ['#2a0838', '#581a68', '#9030a0', '#d060d0'];
+  const TEAL = ['#06203a', '#0c4068', '#18709a', '#38a8d0'];
+  const galaxy = (x, y, t) => {
+    const h = hash(Math.floor(x), Math.floor(y));
+    if (h < 0.03) return '#ffffff';
+    if (h < 0.05) return t >= 2 ? '#fff0a0' : '#a8b8ff';
+    const nb = Math.sin(x * 0.31 + y * 0.17) + Math.sin(x * 0.13 - y * 0.29 + 1.3) + Math.sin((x + y) * 0.21);
+    return (nb > 1.2 ? NEB : nb < -1.5 ? TEAL : GAL)[t];
+  };
+  const ramp = r => (x, y, t) => r[t];
+  const BEIGE = ['#5a4a30', '#a08860', '#d0b888', '#f0dcb0'];
+  const BOOT = ['#1a0c08', '#3a2014', '#5a3420', '#7a4c30'];
+  const GOLDR = ['#5a4208', '#a07c10', '#d8b040', '#f8e080'];
+  const GEM = ['#300c48', '#6a1c90', '#a848e0', '#f0b0ff'];
+  const HAT = ['#2a0c40', '#521c78', '#8030b0', '#b060e0'];
+  const BAND = ['#14061e', '#2a0c40', '#3e1460', '#521c78'];
+  const BANDANA = ['#060c28', '#0c1a50', '#18307a', '#2c4ca8'];
+  const PINK = ['#6a2a6a', '#a84898', '#e078c8', '#f8b0e8'];
+  const SKY = ['#1a3a7a', '#3068b8', '#58a0e8', '#a0d8ff'];
+
+  const P = (hit, fill, line = '#06030c') => ({ hit, fill, line });
+  // Relaxed: big top arms hang at his sides (the right one holds the staff),
+  // lower hands rest on his hips. Raised: the staff goes up high.
+  const staffX = raised ? 80 : 74, staffTop = raised ? -24 : 3, staffBot = raised ? 18 : 66;
+  const staff = [
+    P(cap(staffX, staffTop, staffX, staffBot, 1.6), ramp(GOLDR), '#3a2804'),
+    P(ell(staffX, staffTop, 4, 1.8), ramp(GOLDR), '#3a2804'),                 // prongs
+    P(ell(staffX, staffTop - 3, 3.4, 3.4), ramp(GEM), '#1a0428'),             // purple gem
+  ];
+  const lowerArm = m => {   // hand on hip
+    const X = x => 50 + m * (x - 50);
+    return [
+      P(cap(X(41), 33, X(33), 40, 4.5, 4), galaxy), P(ell(X(36), 36, 5, 4), galaxy),
+      P(cap(X(33), 40, X(40), 45, 4, 3.5), galaxy),
+      P(ell(X(41), 45.5, 3.2, 3), galaxy),
+    ];
+  };
+  const upperArm = m => {   // hanging at his side
+    const X = x => 50 + m * (x - 50);
+    return [
+      P(ell(X(35), 20, 8, 7), galaxy),                          // shoulder
+      P(cap(X(31), 22, X(27), 33, 6, 5), galaxy),               // upper arm
+      P(ell(X(28), 27, 6.5, 7), galaxy),                        // bicep
+      P(cap(X(27), 34, X(26), 45, 4.5, 3.5), galaxy),           // forearm
+      P(ell(X(26.5), 38, 5, 5.5), galaxy),
+      P(ell(X(26), 47, 3.8, 3.5), galaxy),                      // fist
+    ];
+  };
+  const raisedArm = [
+    P(ell(65, 20, 8, 7), galaxy),
+    P(cap(68, 19, 77, 9, 6, 5), galaxy), P(ell(73, 14, 6.5, 5.5), galaxy),
+    P(cap(77, 9, 80, -2, 4.5, 3.5), galaxy), P(ell(78.5, 3, 4.5, 4.5), galaxy),
+    ...staff, P(ell(80, -4, 3.8, 3.5), galaxy),
+  ];
+  const pecL = sq(43, 26, 7.5, 6), pecR = sq(57, 26, 7.5, 6), abs = sq(50, 36, 8.5, 7.5), lats = ell(50, 30, 15, 9);
+  const torso = or(pecL, pecR, abs);
+  const sashLine = cap(37, 17, 60, 44, 4.5);
+  const head = ell(50, 9, 6, 7);
+  const crown = cap(50, 2, 53, -11, 7, 4);
+  return [
+    P(cap(45, 47, 43, 63, 5.5, 4.5), ramp(BEIGE), '#2a2010'),       // legs
+    P(cap(55, 47, 57, 63, 5.5, 4.5), ramp(BEIGE), '#2a2010'),
+    P(ell(42, 64.5, 6, 2.6), ramp(BOOT)), P(ell(58, 64.5, 6, 2.6), ramp(BOOT)),
+    P(ell(50, 46, 11, 5), ramp(BEIGE), '#2a2010'),                  // hips
+    P(cap(47.5, 44, 47, 49, 0.6), ramp(BEIGE), '#5a4a30'),          // drawstrings
+    P(cap(52.5, 44, 53, 49, 0.6), ramp(BEIGE), '#5a4a30'),
+    P(sq(50, 42, 11, 1.9), ramp(BOOT)),                             // belt
+    P(sq(50, 42, 2.2, 1.9), ramp(GOLDR), '#3a2804'),                // buckle
+    P(lats, galaxy),
+    P(abs, (x, y, t) => (Math.round(y) % 3 === 0 || Math.round(x) === 50) ? GAL[Math.max(0, t - 2)] : galaxy(x, y, t)),
+    P(ell(50, 17, 13, 5), galaxy),                                  // traps
+    ...lowerArm(1), ...lowerArm(-1),
+    ...upperArm(1), ...(raised ? raisedArm : [...staff, ...upperArm(-1)]),
+    P(pecL, galaxy), P(pecR, galaxy),
+    P(and(sashLine, torso), (x, y, t) => ((x - 37) + (y - 17) + bayer(Math.floor(x), Math.floor(y)) * 8 < 26 ? SKY : PINK)[t], '#3a1440'),
+    P(ell(50, 15, 5, 3), galaxy),                                   // neck
+    P(head, galaxy),
+    P(and(or(head, cap(50, 14, 50, 17.5, 3.5, 1)), (x, y) => y >= 10.5 ? [0, 0] : null), ramp(BANDANA), '#02040e'),  // bandana
+    P(cap(56, 10, 60, 14, 1.4, 0.8), ramp(BANDANA), '#02040e'),   // knot tail
+    P(crown, ramp(HAT), '#140620'),
+    P(and(crown, (x, y) => y >= -1.5 && y <= 1.5 ? [0, 0] : null), ramp(BAND), '#0a0210'),
+    P(ell(50, 3.5, 12.5, 2.5), ramp(HAT), '#140620'),               // brim
+  ];
+}
+function paintSci(raised) {
+  const [c, g] = makeCanvas(SCI_W, SCI_H);
+  const L = [-0.45, -0.6, 0.66];
+  for (const pt of sciBody(raised)) {
+    const hit = (x, y) => pt.hit(x + 0.5 - SCI_OX, y + 0.5 - SCI_OY);
+    for (let y = 0; y < SCI_H; y++) for (let x = 0; x < SCI_W; x++) {
+      const n = hit(x, y);
+      if (!n) continue;
+      const edge = !hit(x - 1, y) || !hit(x + 1, y) || !hit(x, y - 1) || !hit(x, y + 1);
+      let col;
+      if (edge) col = pt.line;
+      else {
+        const nz = Math.sqrt(Math.max(0, 1 - n[0] * n[0] - n[1] * n[1]));
+        const l = Math.max(0, L[0] * n[0] + L[1] * n[1] + L[2] * nz);
+        const t = Math.max(0, Math.min(3, Math.floor(l * 3.6 + bayer(x, y) - 0.3)));
+        col = pt.fill(x - SCI_OX + 0.5, y - SCI_OY + 0.5, t);
+      }
+      g.fillStyle = col; g.fillRect(x, y, 1, 1);
+    }
+  }
+  // Glowing yellow eyes above the bandana.
+  for (const ex of [47, 52]) {
+    g.fillStyle = '#ffe040'; g.fillRect(ex + SCI_OX, 8 + SCI_OY, 2, 1);
+    g.fillStyle = '#ff9020'; g.fillRect(ex + SCI_OX, 9 + SCI_OY, 2, 1);
+  }
+  return c;
+}
+const SCI_IDLE = paintSci(false), SCI_RAISE = paintSci(true);
+const sciWorld = (bx, by) => [SCI_X + bx - 50, FLOOR_Y - 67 + by];   // body coords -> world
+
+// ---------- Cutscene: meeting the Lord of Dimensions ----------
+let boss = null, bossDone = false, portalOn = false;
+const BOSS_LINES = {
+  talk1: 'HELLO CHILD. I AM THE LORD OF DIMENSIONS.',
+  talk2: 'AND YOU ARE JUST IN TIME TO WATCH ME TAKE OVER THE MULTIVERSE.',
+  talk3: 'NOW... STAND STILL.',
+  talk4: "WELL, I'M OFF. BYE!",
+  doc1: "HOW DID YOU SURVIVE? IT DOESN'T MATTER.",
+  doc2: 'NOW QUICKLY! WE MUST GET TO THE LAB BEFORE WE DE-STABILIZE!',
+};
+const lineSpeaker = phase => phase.startsWith('doc') ? 'SCIENTIST' : 'LORD OF DIMENSIONS';
+function startBossScene() {
+  state = 'boss';
+  held.clear();
+  Object.assign(player, { vx: 0, flip: false, pose: null });
+  camX = SCI_X - 160;
+  boss = { phase: 'face', t: 0, zoom: 4, fx: 0, fy: 0, pose: 'idle', spin: 0, gone: false, twist: 0, shown: 0, dust: [], shake: 0 };
+  sfx.drone();
+}
+function bossVoice(prev, shown, text) {
+  for (let i = Math.floor(prev); i < Math.floor(shown); i++)
+    if (i % 2 === 0 && text[i] !== ' ') tone({ f0: 110 + Math.random() * 30, dur: 0.07, vol: 0.07 });
+}
+function updateBossScene(dt) {
+  const b = boss;
+  b.t += dt;
+  const next = phase => { b.phase = phase; b.t = 0; b.shown = 0; };
+  const ease = t => t * t * (3 - 2 * t);
+  b.shake = 0;
+  if (b.phase === 'face') {
+    // Close-up on his face, then pull back to show all of him.
+    [b.fx, b.fy] = sciWorld(51, 0);
+    if (b.t > 1.5) { next('zoomout'); sfx.sting(); }
+  } else if (b.phase === 'zoomout') {
+    const f = ease(Math.min(1, b.t / 1.6));
+    const [hx, hy] = sciWorld(51, 0);
+    b.zoom = Math.pow(4, 1 - f);
+    b.fx = hx + (camX + W / 2 - hx) * f; b.fy = hy + (H / 2 - hy) * f;
+    if (b.t > 2.1) { b.zoom = 1; next('talk1'); }
+  } else if (b.phase in BOSS_LINES) {
+    const text = BOSS_LINES[b.phase], prev = b.shown;
+    b.shown = Math.min(text.length, b.t * 26);
+    if (b.phase.startsWith('doc')) voiceBlips(prev, b.shown, text, false);
+    else bossVoice(prev, b.shown, text);
+    if (b.phase === 'talk4') b.pose = 'idle';
+    if (lineDone(b.shown, text.length)) {
+      if (b.phase === 'talk1') next('talk2');
+      else if (b.phase === 'talk2') next('talk3');
+      else if (b.phase === 'talk3') { next('raise'); sfx.raise(); }
+      else if (b.phase === 'talk4') { next('spin'); sfx.spin(); }
+      else if (b.phase === 'doc1') next('doc2');
+      else next('toLab');
+    }
+  } else if (b.phase === 'raise') {
+    // Up goes the golden staff, glowing and throwing sparks.
+    if (b.t > 0.25) b.pose = 'raise';
+    if (b.t > 0.4 && Math.random() < 0.6) {
+      const [ox, oy] = sciWorld(80, -27);
+      burst(ox, oy, ['#fff8c0', '#f8d040', '#f0b0ff'], 2, 50);
+    }
+    if (b.t > 1.6) { next('twist'); sfx.twist(); }
+  } else if (b.phase === 'twist') {
+    // The whole world twists around him into a fiery portal.
+    b.twist = Math.min(1, b.t / 3);
+    b.shake = b.t < 3 ? 1 : 0;
+    if (Math.random() < 0.5) { const [ox, oy] = sciWorld(80, -27); burst(ox, oy, ['#fff8c0', '#f8d040'], 1, 40); }
+    if (b.t > 3.8) { portalOn = true; next('talk4'); }
+  } else if (b.phase === 'spin') {
+    b.spin += dt * (6 + b.t * 30);
+    if (b.t > 1.5) {
+      // Poof! Purple and blue dust everywhere.
+      b.gone = true;
+      sfx.vanish();
+      for (let n = 0; n < 220; n++) {
+        const [x, y] = sciWorld(15 + Math.random() * 70, -10 + Math.random() * 76);
+        const a = Math.random() * Math.PI * 2, sp = 10 + Math.random() * 60;
+        b.dust.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 10, life: 1.2 + Math.random() * 1.6,
+          c: ['#a848e0', '#7030c0', '#f0b0ff', '#3068e8', '#58a0ff', '#a0d8ff'][n % 6] });
+      }
+      next('poof');
+    }
+  } else if (b.phase === 'poof') {
+    if (b.t > 2.5) next('docTurn');
+  } else if (b.phase === 'docTurn') {
+    // The scientist spins around to look at you.
+    if (b.t > 0.4 && !doc.flip) { doc.flip = true; sfx.blip(); }
+    if (b.t > 1) next('doc1');
+  } else if (b.phase === 'toLab') {
+    // Both of you hurry right, into the lab.
+    const p = player;
+    doc.flip = false; doc.moving = true; doc.walkT += dt; doc.x += RUN_SPEED * 0.8 * dt;
+    if (b.t > 0.4) {
+      p.x += RUN_SPEED * 0.8 * dt; p.vx = RUN_SPEED * 0.8; p.flip = false; p.walkT += dt;
+      guySteps(p);
+    }
+    if (doc.x > LAB_DOOR_X - 40 && labDoorT === 0) sfx.whoosh();
+    if (doc.x > LAB_DOOR_X - 40) labDoorT = Math.min(1, labDoorT + dt * 3);
+    const target = Math.max(0, Math.min(TOWN3_W - W, p.x - W * 0.35));
+    camX += (target - camX) * (1 - Math.pow(0.9, dt * 60));
+    if (p.x > LAB_DOOR_X + LAB_DOOR_W - 4) {
+      Object.assign(doc, { room: 'lab', x: 200, flip: true, moving: false });
+      p.vx = 0;
+      endBossScene();
+      goThrough('lab', LAB_IN_DOOR_X + 18, false);
+    }
+  }
+  for (const d of b.dust) { d.vx *= Math.pow(0.3, dt); d.vy = d.vy * Math.pow(0.3, dt) - 6 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt; }
+  b.dust = b.dust.filter(d => d.life > 0);
+}
+function endBossScene() {
+  boss = null;
+  bossDone = true;
+  state = 'play';
+}
+
+// Swirling red, orange, yellow and purple portal (world-anchored around where he stood).
+const portalImg = ctx.createImageData(W, H);
+let twistSnap = null;
+function drawPortalBg(now, amount) {
+  const bg = curRoom().bg, cx = Math.round(camX);
+  ctx.drawImage(bg, cx, 0, W, H, 0, 0, W, H);
+  if (amount < 1 && !twistSnap) twistSnap = ctx.getImageData(0, 0, W, H).data;
+  const src = twistSnap, out = portalImg.data;
+  const [px, py] = sciWorld(50, 20), ox = px - camX, oy = py;
+  const t = now / 1000, COLS = [[208, 24, 24], [240, 112, 24], [248, 208, 48], [112, 32, 160]];
+  const mix = Math.min(1, Math.max(0, (amount - 0.25) / 0.65));
+  for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < W; x++) {
+    const dx = x - ox, dy = y - oy, r = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
+    const i = (y * W + x) * 4;
+    let c;
+    if (bayer(x, y) < mix) {
+      if (r < 6 + Math.sin(t * 6) * 1.5) c = [255, 244, 200];
+      else {
+        const sp = ang / (Math.PI * 2) + Math.log(r + 1) * 0.55 - t * 0.35;
+        const f = sp * 4 - Math.floor(sp * 4);
+        c = COLS[(Math.floor(sp * 4) % 4 + 4 + (f + bayer(x, y) * 0.35 > 1 ? 1 : 0)) % 4];
+      }
+    } else {
+      // Twist the old view around the center, harder near the middle.
+      const a = ang - amount * 5 * Math.max(0, 1 - r / 260);
+      const sx = Math.round(ox + Math.cos(a) * r), sy = Math.round(oy + Math.sin(a) * r);
+      const j = ((Math.max(0, Math.min(H - 1, sy)) * W) + Math.max(0, Math.min(W - 1, sx))) * 4;
+      c = src ? [src[j], src[j + 1], src[j + 2]] : [0, 0, 0];
+    }
+    out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; out[i + 3] = 255;
+  }
+  ctx.putImageData(portalImg, 0, 0, 0, 0, W, FLOOR_Y);
+}
+
+function drawSci() {
+  if (!(room === 'town3') || bossDone || (boss && boss.gone)) return;
+  const img = boss && boss.pose === 'raise' ? SCI_RAISE : SCI_IDLE;
+  const sx = Math.cos(boss ? boss.spin : 0);
+  ctx.save();
+  ctx.translate(Math.round(SCI_X - camX), FLOOR_Y);
+  ctx.scale(Math.abs(sx) < 0.08 ? 0.08 : sx, 1);
+  ctx.drawImage(img, -SCI_W / 2, -SCI_H);
+  ctx.restore();
+  if (boss && boss.pose === 'raise' && !boss.gone) {
+    // Glow around the gem on top of the staff.
+    const [gx, gy] = sciWorld(80, -27);
+    const r = 5 + Math.sin(performance.now() / 70) * 1.5;
+    for (let y = -10; y <= 10; y++) for (let x = -10; x <= 10; x++) {
+      const d = Math.hypot(x, y);
+      if (d > 3 && d < r + 3 && bayer(x + 40, y + 40) < (r + 3 - d) / 6) {
+        ctx.fillStyle = '#fff0a0'; ctx.fillRect(Math.round(gx - camX) + x, gy + y, 1, 1);
+      }
+    }
+  }
+}
+
+const zoomBuf = makeCanvas(W, H);
+function drawBossScene() {
+  const b = boss;
+  for (const d of b.dust) {
+    if (d.life < 0.4 && Math.floor(d.life * 30) % 2) continue;
+    ctx.fillStyle = d.c;
+    ctx.fillRect(Math.round(d.x - camX), Math.round(d.y), d.life > 1.4 ? 2 : 1, d.life > 1.4 ? 2 : 1);
+  }
+  if (b.shake) {
+    const zb = zoomBuf[1];
+    zb.clearRect(0, 0, W, H); zb.drawImage(canvas, 0, 0);
+    ctx.drawImage(zoomBuf[0], Math.round((Math.random() - 0.5) * 3), Math.round((Math.random() - 0.5) * 3));
+  }
+  if (b.zoom > 1.01) {
+    // Camera close-up: blow up a small part of the frame.
+    const zb = zoomBuf[1];
+    zb.drawImage(canvas, 0, 0);
+    const sw = W / b.zoom, sh = H / b.zoom;
+    const sx = Math.max(0, Math.min(W - sw, b.fx - camX - sw / 2)), sy = Math.max(0, Math.min(H - sh, b.fy - sh / 2));
+    ctx.drawImage(zoomBuf[0], sx, sy, sw, sh, 0, 0, W, H);
+    // Letterbox bars for the dramatic close-up.
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, 12); ctx.fillRect(0, H - 12, W, 12);
+  }
+  if (b.phase in BOSS_LINES) drawCaption(lineSpeaker(b.phase), BOSS_LINES[b.phase], Math.floor(b.shown));
+}
+
+// ---------- Cutscene: the scientist explains things in the lab ----------
+// [speaker, text, yelled?]  (null speaker = you)
+const LAB_LINES = [
+  ['SCIENTIST', "NOW WE CAN'T GO BACK OUT ANYMORE."],
+  ['SCIENTIST', 'IF YOU DO, IT CAN ONLY BE A FEW SECONDS BEFORE YOU BECOME INTERDIMENSIONALLY LOCKED LIKE THE OTHERS.'],
+  ['SCIENTIST', 'NOW I MUST ASK, HOW DID YOU SURVIVE?'],
+  [null, "I DON'T KNOW. I TOOK OUT THE TRASH AND GOT ZAPPED BY THIS RING THING, THEN THE..."],
+  ['SCIENTIST', 'AH-HA! YOU GOT ZAPPED BY OUR PROTOTYPE OF OUR INTERDIMENSIONAL GROUNDER.', true],
+  ['SCIENTIST', "WE THOUGHT IT DIDN'T WORK, BUT TURNS OUT WE WERE MISTAKEN."],
+  ['SCIENTIST', 'COME, WE HAVE MUCH TO SHOW YOU.'],
+];
+const DOC_TALK_X = 74, DOC_LAB_X = 200;
+let labScene = null, labTalked = false;
+function startLabScene() {
+  state = 'labScene';
+  held.clear();
+  Object.assign(player, { vx: 0, flip: false });
+  labScene = { phase: 'walk', t: 0, i: 0, shown: 0, shake: false };
+}
+function updateLabScene(dt) {
+  const sc = labScene;
+  sc.t += dt;
+  sc.shake = false;
+  if (sc.phase === 'walk') {
+    // He comes over to you.
+    if (sc.t < 0.5) return;
+    Object.assign(doc, { flip: true, moving: true });
+    doc.x -= WALK_SPEED * dt; doc.walkT += dt; momSteps(doc);
+    if (doc.x <= DOC_TALK_X) { Object.assign(doc, { x: DOC_TALK_X, moving: false }); sc.phase = 'talk'; sc.t = 0; }
+  } else if (sc.phase === 'talk') {
+    const [who, text, yell] = LAB_LINES[sc.i], prev = sc.shown;
+    if (yell && sc.t < 0.05 && !sc.yelled) { sc.yelled = true; sfx.ahha(); }
+    sc.shake = !!yell && sc.t < 0.6;
+    sc.shown = Math.min(text.length, sc.t * (yell ? 40 : 30));
+    voiceBlips(prev, sc.shown, text, false);
+    if (lineDone(sc.shown, text.length)) {
+      sc.i++; sc.t = 0; sc.shown = 0; sc.yelled = false;
+      if (sc.i >= LAB_LINES.length) sc.phase = 'leave';
+    }
+  } else if (sc.phase === 'leave') {
+    // "Come" - he heads back over to his computer.
+    Object.assign(doc, { flip: false, moving: true });
+    doc.x += WALK_SPEED * dt; doc.walkT += dt; momSteps(doc);
+    if (doc.x >= DOC_LAB_X) {
+      Object.assign(doc, { x: DOC_LAB_X, flip: true, moving: false });
+      labScene = null;
+      labTalked = true;
+      state = 'play';
+    }
+  }
+}
+function drawLabScene() {
+  const sc = labScene;
+  if (sc.shake) {
+    const zb = zoomBuf[1];
+    zb.clearRect(0, 0, W, H); zb.drawImage(canvas, 0, 0);
+    ctx.drawImage(zoomBuf[0], Math.round((Math.random() - 0.5) * 4), Math.round((Math.random() - 0.5) * 4));
+  }
+  if (sc.phase === 'talk') {
+    const [who, text] = LAB_LINES[sc.i];
+    drawCaption(who || playerName, text, Math.floor(sc.shown));
+  }
+  if (fadeInT > 0) {
+    ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- Cutscene: he notices the ring, touches it, gets zapped ----------
+const RING_TOUCH_X = 87;                // where he stands to touch the ring
+let ringScene = null, ringTouched = false;
+
+function startRingScene() {
+  state = 'ringScene';
+  held.clear();
+  ringScene = { phase: 'notice', t: 0 };
+  sfx.ding();
+  Object.assign(player, { vx: 0, flip: player.x > RING.x, pose: null, shakeX: 0, flash: false });
+}
+
+function endRingScene() {
+  Object.assign(player, { x: RING_TOUCH_X, y: FLOOR_Y, vx: 0, vy: 0, onGround: true, flip: true,
+                          pose: null, shakeX: 0, flash: false });
+  ringScene = null;
+  ringTouched = true;
+  state = 'play';
+}
+
+function updateRingScene(dt) {
+  const sc = ringScene, p = player;
+  sc.t += dt;
+  const next = phase => { sc.phase = phase; sc.t = 0; };
+  if (sc.phase === 'notice') {
+    if (sc.t > 1.1) next('walk');
+  } else if (sc.phase === 'walk') {
+    const dir = Math.sign(RING_TOUCH_X - p.x);
+    p.x += dir * WALK_SPEED * dt;
+    p.vx = dir * WALK_SPEED;
+    p.flip = dir < 0;
+    p.walkT += dt;
+    guySteps(p);
+    if (dir === 0 || Math.sign(RING_TOUCH_X - p.x) !== dir) {
+      Object.assign(p, { x: RING_TOUCH_X, vx: 0, flip: true });
+      next('reach');
+    }
+  } else if (sc.phase === 'reach') {
+    p.pose = 'reach';
+    if (sc.t > 0.6) { next('zap'); sfx.zap(); }
+  } else if (sc.phase === 'zap') {
+    p.shakeX = Math.round((Math.random() - 0.5) * 3);
+    p.flash = Math.floor(sc.t * 20) % 2 === 0;
+    if (Math.random() < 0.5) burst(p.x - 5, p.y - 12, ['#ffffff', '#a8e8ff', '#58a0ff'], 2, 70);
+    if (sc.t > 0.8) { p.pose = null; p.shakeX = 0; p.flash = false; next('field'); sfx.field(); }
+  } else if (sc.phase === 'field') {
+    if (sc.t > 1.8) next('done');
+  } else if (sc.phase === 'done' && sc.t > 0.4) endRingScene();
+
+  const target = Math.max(0, Math.min(curRoom().w - W, p.x - W * 0.5));
+  camX += (target - camX) * (1 - Math.pow(0.9, dt * 60));
+}
+
+// Jagged electric bolt between two points.
+function drawBolt(x0, y0, x1, y1) {
+  const n = 6, pts = [[x0, y0]];
+  for (let i = 1; i < n; i++) {
+    const k = i / n;
+    pts.push([x0 + (x1 - x0) * k + (Math.random() - 0.5) * 6, y0 + (y1 - y0) * k + (Math.random() - 0.5) * 6]);
+  }
+  pts.push([x1, y1]);
+  for (const [col, w] of [['#58a0ff', 3], ['#ffffff', 1]]) {
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(Math.round(x - camX) + 0.5, Math.round(y) + 0.5) : ctx.moveTo(Math.round(x - camX) + 0.5, Math.round(y) + 0.5));
+    ctx.stroke();
+  }
+}
+
+function drawRingScene(now) {
+  const sc = ringScene, p = player;
+  if (sc.phase === 'notice') {
+    // "!" pops up over his head.
+    const pop = Math.min(1, sc.t / 0.15);
+    const img = textImg('!', { scale: 2, gap: 0, bold: 1, rows: ['#ffffff', '#fff8a0', '#f8d040'], outline: '#101018' });
+    ctx.drawImage(img, Math.round(p.x - camX) - 8, Math.round(p.y - 44 + (1 - pop) * 6));
+  }
+  if (sc.phase === 'zap') {
+    const hx = p.x - 5, hy = p.y - 11;
+    drawBolt(hx, hy, RING.x + 19, RING.y + 23);
+    drawBolt(hx, hy, p.x + (Math.random() - 0.5) * 10, p.y - 22 - Math.random() * 6);
+    if (Math.random() < 0.6) drawBolt(RING.x + 26, RING.y - 6, hx, hy);
+    if (sc.t < 0.12) {   // white flash
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (sc.phase === 'field') {
+    // Blue energy field around him, shimmering, then flickering out.
+    const fadeStart = 1.2, k = sc.t < fadeStart ? 1 : 1 - (sc.t - fadeStart) / 0.6;
+    const flickerOff = sc.t > fadeStart && Math.floor(sc.t * 18) % 2 === 0;
+    if (!flickerOff && k > 0) {
+      const cx = p.x - camX, cy = p.y - 13, rx = 14, ry = 19;
+      const grow = Math.min(1, sc.t / 0.2);
+      for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++)
+        for (let x = Math.floor(cx - rx - 1); x <= cx + rx + 1; x++) {
+          const d = Math.hypot((x - cx) / (rx * grow), (y - cy) / (ry * grow));
+          if (d > 1) continue;
+          const wave = Math.sin(d * 10 - now / 70) * 0.25;
+          if (d > 0.86) ctx.fillStyle = d > 0.94 ? '#ffffff' : '#a8e8ff';
+          else if (bayer(x, y) + 0.5 < (0.25 + d * 0.35 + wave) * k) ctx.fillStyle = (x + y) % 3 ? '#58a0ff' : '#a8e8ff';
+          else continue;
+          ctx.fillRect(x, y, 1, 1);
+        }
+    }
+  }
+}
+
+// ---------- Cutscene: Mom says good job, and the front door opens ----------
+const MOM_WAIT_X = 150;
+let praise = null, momPraised = false, exitOpen = false, exitOpenT = 0;
+
+function startPraiseScene() {
+  state = 'praise';
+  held.clear();
+  momPraised = true;
+  praise = { phase: 'wait', t: 0, text: 'GOOD JOB HONEY, YOU CAN GO OUTSIDE NOW.', shown: 0 };
+}
+
+function endPraiseScene() {
+  exitOpen = true;
+  exitOpenT = 1;
+  praise = null;
+  state = 'play';
+}
+
+function updatePraiseScene(dt) {
+  const sc = praise;
+  sc.t += dt;
+  const next = phase => { sc.phase = phase; sc.t = 0; };
+  let camTarget = 0;
+  if (sc.phase === 'wait') { if (sc.t > 0.5) next('talk'); }
+  else if (sc.phase === 'talk') {
+    const prev = sc.shown;
+    sc.shown = Math.min(sc.text.length, sc.t * 30);
+    voiceBlips(prev, sc.shown, sc.text, true);
+    if (lineDone(sc.shown, sc.text.length)) next('open');
+  } else if (sc.phase === 'open') {
+    // Pan over to the front door and swing it open.
+    camTarget = LEVEL_W - W;
+    if (sc.t > 0.5 && !exitOpen) sfx.creak();
+    if (sc.t > 0.5) { exitOpen = true; exitOpenT = Math.min(1, (sc.t - 0.5) / 0.6); }
+    if (sc.t > 1.8) next('back');
+  } else if (sc.phase === 'back') {
+    camTarget = Math.max(0, Math.min(LEVEL_W - W, player.x - W * 0.35));
+    if (sc.t > 0.6) endPraiseScene();
+  }
+  camX += (camTarget - camX) * (1 - Math.pow(0.9, dt * 60));
+}
+
+function drawPraiseScene() {
+  if (praise.phase === 'talk') drawCaption('MOM', praise.text, Math.floor(praise.shown));
+}
+
+// The front door swinging open: the doorway is bright daylight.
+function drawExitOpen() {
+  if (!exitOpen) return;
+  const x0 = Math.round(EXIT_X + 2 - camX), y0 = 88, w = LEVEL_W - EXIT_X - 2, h = FLOOR_Y - 88;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const edge = Math.min(x, y, h - 1 - y);
+    ctx.fillStyle = edge > 2 || bayer(x, y) + 0.5 < edge / 3 ? '#ffffff' : '#fff4c8';
+    ctx.fillRect(x0 + x, y0 + y, 1, 1);
+  }
+  // The door itself, narrowing as it swings inward.
+  const dw = Math.max(3, Math.round(w * (1 - exitOpenT)));
+  cbox(ctx, x0, y0, dw, h, 0, bevel(['#5a4208', '#a07c10', '#d8b040', '#f8e080'], x0, y0, dw, h));
+}
+
+// A soft glow of daylight from the open door, kept to the right side of the screen.
+const LIGHT_W = Math.round(W * 0.4);
+const [lightImg, lgx] = makeCanvas(LIGHT_W, H);
+for (let y = 0; y < H; y++) for (let x = 0; x < LIGHT_W; x++) {
+  const across = (x / LIGHT_W) ** 2;                           // stronger toward the door
+  const fromDoor = Math.max(0, 1 - Math.abs(y - 110) / 90);      // centered on the doorway's height
+  let k = across * (0.35 + fromDoor * 0.75);
+  if (y > FLOOR_Y && x > LIGHT_W * 0.45) k += 0.25 * across;     // bright patch on the floor
+  if (bayer(x, y) + 0.5 < k * 0.9) { lgx.fillStyle = k > 0.7 ? '#fff8e0' : '#ffe8a8'; lgx.fillRect(x, y, 1, 1); }
+}
+function drawDaylight() {
+  if (!exitOpen) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.13 * exitOpenT;
+  ctx.drawImage(lightImg, Math.round(EXIT_X + 2 - camX) - LIGHT_W, 0);
+  ctx.restore();
+}
+
+// White silhouette of a sprite, for the zap flicker.
+const flashCache = new Map();
+function flashSprite(img) {
+  if (!flashCache.has(img)) {
+    const [c, x] = makeCanvas(img.width, img.height);
+    x.drawImage(img, 0, 0);
+    x.globalCompositeOperation = 'source-in';
+    x.fillStyle = '#e8f8ff';
+    x.fillRect(0, 0, img.width, img.height);
+    flashCache.set(img, c);
+  }
+  return flashCache.get(img);
+}
+
 function updateLevel(dt) {
   if (state === 'cutscene') updateCutscene(dt);
+  else if (state === 'ringScene') updateRingScene(dt);
+  else if (state === 'praise') updatePraiseScene(dt);
+  else if (state === 'boss') updateBossScene(dt);
+  else if (state === 'labScene') updateLabScene(dt);
   else updatePlay(dt);
   fadeInT = Math.max(0, fadeInT - dt);
   updateParticles(dt);
@@ -1152,6 +2941,7 @@ let state = 'title';
 function start() {
   if (state !== 'title') return;
   state = 'diving';
+  sfx.portal();
   const t0 = performance.now();
   (function dive(now) {
     const t = (now - t0) / 1000;
@@ -1188,7 +2978,7 @@ function loop(now) {
     }
   } else if (state === 'name' || state === 'confirm') {
     renderName(now);
-  } else if (state === 'cutscene' || state === 'play') {
+  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene') {
     updateLevel(dt);
     renderLevel(now);
   }
@@ -1201,12 +2991,13 @@ addEventListener('keydown', e => {
   else if (state === 'select') { if (chosenAt === null && e.code === 'Escape') backToTitle(); }
   else if (state === 'name') nameKey(e);
   else if (state === 'confirm') confirmKey(e);
-  else if (state === 'cutscene') {
-    // Any key skips, like Prehistoric Peril. Arrows still count as held so you can move right away.
-    if (!e.repeat && cut.phase !== 'outro') { e.preventDefault(); beginPlay(); }
-    if (e.code.startsWith('Arrow')) held.add(e.code);
+  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene') {
+    // Cutscenes can't be skipped, but Enter moves on to the next dialogue box.
+    if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) enterQueued = true;
+    if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   } else if (state === 'play') {
-    if (e.code.startsWith('Arrow')) { e.preventDefault(); held.add(e.code); }
+    if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); held.add(e.code); }
+    else if (e.code === 'KeyE' && !e.repeat) interact();
   }
 });
 addEventListener('keyup', e => held.delete(e.code));
@@ -1229,10 +3020,13 @@ function buttonAt(e) {
 }
 canvas.addEventListener('mousemove', e => {
   if (state === 'select' && chosenAt === null) {
-    hover = slotAt(e);
+    const h = slotAt(e);
+    if (h >= 0 && h !== hover) sfx.blip();
+    hover = h;
     canvas.style.cursor = hover >= 0 ? 'pointer' : 'default';
   } else if (state === 'confirm') {
     const b = buttonAt(e);
+    if (b >= 0 && b !== confirmSel) sfx.blip();
     if (b >= 0) confirmSel = b;
     canvas.style.cursor = b >= 0 ? 'pointer' : 'default';
   }
@@ -1244,11 +3038,11 @@ canvas.addEventListener('click', e => {
   if (state === 'title') return start();
   if (state === 'select' && chosenAt === null) {
     hover = slotAt(e);
-    if (hover >= 0) chosenAt = performance.now();
+    if (hover >= 0) { chosenAt = performance.now(); sfx.confirm(); }
   } else if (state === 'confirm') {
     const b = buttonAt(e);
     if (b >= 0) { confirmSel = b; answerConfirm(); }
-  } else if (state === 'cutscene' && cut.phase !== 'outro') beginPlay();
+  }
 });
 </script>
 </body>
