@@ -2073,6 +2073,66 @@ function drawRepairShop() {
   ctx.drawImage(repairCounter, Math.round(REPAIR_COUNTER.x - camX), REPAIR_COUNTER.y);
 }
 
+// ---------- The $ shop (through the $ doorway) ----------
+// Floating display platforms at different heights. Each has a glowing pad
+// where an item will sit (SHOP_SPOTS) - no items yet.
+const SHOP_W = 320, SHOP_DOOR_X = 16;
+const LAB2_SHOP_X = 79, LAB2_SHOP_Y = 240;              // the $ doorway's step in lab room 2
+const SHOP_SPOTS = [[52, 112], [98, 86], [150, 106], [198, 78], [248, 108], [284, 72]];   // [x, y] platform left edge and top
+const SHOP_PLAT_W = 30;
+const [shopBg, spx] = makeCanvas(SHOP_W, H);
+{
+  const put = (x, y, c) => { spx.fillStyle = c; spx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, spx);
+  const DARK = ['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'];
+  const GOLDR = ['#3a2a04', '#7a5a10', '#c8a030', '#f8e080'];
+  // Green-tinted metal walls.
+  for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < SHOP_W; x++) {
+    const px = x % 40;
+    let c = bayer(x, y) > y / FLOOR_Y ? '#16241e' : '#1e3028';
+    if (px === 0 || y === 46 || y === 96) c = '#08100c';
+    else if (px === 1 || y === 47 || y === 97) c = '#30483c';
+    else if ((px === 4 || px === 36) && (y === 51 || y === 92 || y === 101 || y === 131)) c = '#5a7a6a';
+    put(x, y, c);
+  }
+  for (let y = 0; y < 14; y++) for (let x = 0; x < SHOP_W; x++) put(x, y, y === 13 ? '#0a0e18' : '#121826');
+  sb(GOLDR, -2, 4, SHOP_W + 4, 4, 0);
+  sb(STEEL, -2, 9, SHOP_W + 4, 3, 0);
+  // Shiny checkered floor.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < SHOP_W; x++) {
+    const ry = y - FLOOR_Y;
+    put(x, y, ry === 0 ? '#e0f0e8' : ry === 1 ? '#101018' : ((x >> 3) + (ry >> 3)) % 2 ? '#2a3a34' : (bayer(x, y) > 0.35 ? '#5a7468' : '#4a6458'));
+  }
+  // Door back out to the lab.
+  sb(DARK, 4, FLOOR_Y - 40, 24, 40, 0);
+  sb(HATCH, 7, FLOOR_Y - 36, 18, 36, 1);
+  for (let y = FLOOR_Y - 36; y < FLOOR_Y; y++) { put(15, y, '#101018'); put(16, y, '#101018'); }
+  for (let x = 11; x < 21; x++) put(x, FLOOR_Y - 39, '#40e0ff');
+  // Display platforms: a spotlight from above, a glass shelf, and a glowing pad.
+  for (const [x, y] of SHOP_SPOTS) {
+    const cx = x + SHOP_PLAT_W / 2;
+    for (let ly = 14; ly < y; ly++) {
+      const half = 3 + (ly - 14) * 0.18;
+      for (let lx = Math.floor(cx - half); lx <= cx + half; lx++)
+        if (bayer(lx, ly) + 0.5 < 0.35 * (1 - Math.abs(lx - cx) / (half + 1))) put(lx, ly, '#3a5a4c');
+    }
+    sb(STEEL, Math.round(cx) - 3, 12, 7, 3, 0);                       // light fixture
+    sb(STEEL, x, y, SHOP_PLAT_W, 5, 1);
+    for (let px = x + 7; px < x + SHOP_PLAT_W - 7; px++) { put(px, y, '#80f0a0'); put(px, y + 1, '#40c060'); }   // glowing pad
+    for (let py = y + 5; py < y + 9; py++) put(Math.round(cx), py, '#30483c');                                   // little stem
+    put(Math.round(cx) - 1, y + 9, '#40e060'); put(Math.round(cx), y + 9, '#80f0a0'); put(Math.round(cx) + 1, y + 9, '#40e060');
+  }
+  // Big $ SHOP sign (in front of the light beams).
+  sb(DARK, 128, 18, 64, 40, 1);
+  drawPlaceIcon(spx, 'money', 160, 33, '#1e4a2a', 2);
+  const name = textImg('SHOP', { rows: ['#80f0a0'], outline: '#101018' });
+  spx.drawImage(name, 160 - Math.round(name.width / 2), 47);
+}
+const SHOP_PLATFORMS = [
+  { x: 0, y: FLOOR_Y, w: SHOP_W },
+  ...SHOP_SPOTS.map(([x, y]) => ({ x, y, w: SHOP_PLAT_W })),
+];
+
 // ---------- Floating people (third neighborhood) ----------
 // People frozen in midair, arms up and mouths open.
 function floaterSprite(over) {
@@ -2141,6 +2201,7 @@ const ROOMS = {
   town2:   { bg: town2Bg,   w: TOWN2_W,   platforms: TOWN2_PLATFORMS,   rightWall: TOWN2_W - 6, left: 'town', right: 'town3' },
   town3:   { bg: town3Bg,   w: TOWN3_W,   platforms: TOWN3_PLATFORMS,   rightWall: TOWN3_W - 6, left: 'town2' },
   lab:     { bg: labBg,     w: LAB_W,     platforms: LAB_PLATFORMS,     rightWall: LAB_W - 6 },
+  shop:    { bg: shopBg,    w: SHOP_W,    platforms: SHOP_PLATFORMS,    rightWall: SHOP_W - 6 },
   repair:  { bg: repairBg,  w: REPAIR_W,  platforms: REPAIR_PLATFORMS,  rightWall: REPAIR_W - 6 },
   lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR },
 };
@@ -2206,12 +2267,12 @@ function drawCaption(speaker, text, shown) {
 // Metroid Fusion-style minimap in the corner.
 function drawHUD(now) {
   // Minimap: the alley, the living room, and the town beyond the locked door. Current room is lit.
-  const mx = W - 94, my = 2;
-  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 94, 14);
-  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 92, 12);
-  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7]];
+  const mx = W - 103, my = 2;
+  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 103, 14);
+  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 101, 12);
+  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7], ['shop', 90, 7]];
   for (const [name, cx, cw] of cells) {
-    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || name === 'repair' ? '#304890' : '#4870c0';
+    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || name === 'repair' || name === 'shop' ? '#304890' : '#4870c0';
     ctx.fillRect(mx + cx, my + 3, cw, 6);
   }
   ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 26, my + 5, 2, 2);
@@ -2276,6 +2337,10 @@ const INTERACTABLES = [
     use: () => goThrough('lab2', LAB_IN_DOOR_X + 18, false) },
   { room: 'lab2', x: () => LAB2_REPAIR_X, y: LAB2_REPAIR_Y, iconY: LAB2_REPAIR_Y - 46, active: () => true,
     use: () => goThrough('repair', REPAIR_DOOR_X + 18, false) },
+  { room: 'lab2', x: () => LAB2_SHOP_X, y: LAB2_SHOP_Y, iconY: LAB2_SHOP_Y - 46, active: () => true,
+    use: () => goThrough('shop', SHOP_DOOR_X + 18, false) },
+  { room: 'shop', x: () => SHOP_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
+    use: () => goThrough('lab2', LAB2_SHOP_X, false, true, LAB2_SHOP_Y) },
   { room: 'repair', x: () => REPAIR_DOOR_X, y: FLOOR_Y, iconY: 84, active: () => true,
     use: () => goThrough('lab2', LAB2_REPAIR_X, false, true, LAB2_REPAIR_Y) },
   { room: 'lab2', x: () => LAB_IN_DOOR_X, y: LAB2_FLOOR, iconY: LAB2_FLOOR - 52, active: () => true,
@@ -3362,6 +3427,7 @@ const DEBUG_SPOTS = [
     ['Lab', () => debugPlace(6, 'lab', LAB_IN_DOOR_X + 18, false)],
     ['Lab Room 2', () => debugPlace(6, 'lab2', LAB_IN_DOOR_X + 18, false)],
     ['Repair Shop', () => debugPlace(6, 'repair', REPAIR_DOOR_X + 18, false)],
+    ['$ Shop', () => debugPlace(6, 'shop', SHOP_DOOR_X + 18, false)],
   ]],
 ];
 // Progress levels: 0 intro done, 1 trash picked up, 2 trash thrown, 3 ring zapped,
