@@ -1730,7 +1730,7 @@ const [labBg, lbx] = makeCanvas(LAB_W, H);
     for (let y = 18; y < 70; y++) {
       const half = 4 + (y - 18) * 0.45;
       for (let x = Math.floor(lx - half); x <= lx + half; x++)
-        if (bayer(x, y) < 0.35 * (1 - (y - 18) / 52)) put(x, y, '#3a4a6c');
+        if (bayer(x, y) + 0.5 < 0.45 * (1 - (y - 18) / 52) * (1 - Math.abs(x - lx) / (half + 1))) put(x, y, '#3a4a6c');
     }
     sb(STEEL, lx - 1, 12, 3, 4, 0);
     sb(['#8a7a20', '#c8b040', '#f8e080', '#fffff0'], lx - 5, 15, 11, 4, 1);
@@ -1803,15 +1803,15 @@ const LAB_PLATFORMS = [
 ];
 
 // ---------- Lab room 2: the display room (two screens tall) ----------
-// Three glass cases with inventions floating over them, floating ledges to
+// Three doorways (repair shop, teleporter, shop) up on the walls, floating ledges to
 // climb up to them, a console in the corner, and scientists everywhere.
 const LAB2_W = 320, LAB2_H = 320, LAB2_FLOOR = LAB2_H - (H - FLOOR_Y);
 const [lab2Bg, l2x] = makeCanvas(LAB2_W, LAB2_H);
 const LAB2_LEDGES = [[124, 262, 36], [128, 206, 62], [130, 168, 40]];          // [x, y, w] floating ledges
-const LAB2_CASES = [   // [alcove x, y, w, h, pedestal y, item]
-  [18, 44, 128, 82, 130, 'blaster'],
-  [196, 92, 106, 90, 186, 'disks'],
-  [45, 178, 68, 58, 240, 'rod'],
+const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
+  [18, 44, 128, 82, 130, 'hammer'],     // the repair shop
+  [196, 92, 106, 90, 186, 'teleport'],  // the teleporter
+  [45, 178, 68, 58, 240, 'money'],      // the shop
 ];
 {
   const put = (x, y, c) => { l2x.fillStyle = c; l2x.fillRect(x, y, 1, 1); };
@@ -1859,55 +1859,89 @@ const LAB2_CASES = [   // [alcove x, y, w, h, pedestal y, item]
     sb(STEEL, lx, ly, lw, 6, 1);
     for (const tx of [lx + 4, lx + lw - 7]) { sb(DARK, tx, ly + 6, 4, 2, 0); put(tx + 1, ly + 8, '#40e0ff'); put(tx + 2, ly + 8, '#40e0ff'); put(tx + 1, ly + 10, '#2090b0'); }
   }
-  // Display cases: lit alcove, glass dome on a pedestal, invention floating above.
-  for (const [ax, ay, aw, ah, py, item] of LAB2_CASES) {
+  // Symbol icons, outlined in black: [rows, colors].
+  const ICONS = {
+    hammer: [[
+      '.GGGGGGGGGG',
+      'GGGGGGGGGGG',
+      'ggggggggggg',
+      '....nnN....',
+      '....nnN....',
+      '....nnN....',
+      '....nnN....',
+      '....nnN....',
+      '....nnN....',
+      '....nnN....',
+      '....NNN....',
+    ], { G: '#e0e8f8', g: '#8a94a8', n: '#e0a050', N: '#9a5a28' }],
+    teleport: [[
+      '...ccccccc...',
+      '.cc.......cc.',
+      '...ccccccc...',
+      '.....www.....',
+      '.....bbb.....',
+      '......w......',
+      '...bbbbbbb...',
+      '..w..www..w..',
+      '.....bbb.....',
+      '.....w.w.....',
+      '....bb.bb....',
+      '...ccccccc...',
+      '.cc.......cc.',
+      '...ccccccc...',
+    ], { c: '#40e0ff', w: '#ffffff', b: '#80c0ff' }],
+    money: [[
+      '....#....',
+      '..#####..',
+      '.##.#.##.',
+      '.##.#....',
+      '..####...',
+      '....####.',
+      '....#.##.',
+      '.##.#.##.',
+      '..#####..',
+      '....#....',
+    ], { '#': '#40e060' }],
+  };
+  const drawIcon = (name, cx, cy, glow) => {
+    const [rows, cols] = ICONS[name];
+    const w = rows[0].length, h = rows.length, x0 = Math.round(cx - w / 2), y0 = Math.round(cy - h / 2);
+    for (let y = -14; y <= 14; y++) for (let x = -16; x <= 16; x++)
+      if (bayer(x, y) + 0.5 < 0.8 * Math.max(0, 1 - Math.hypot(x, y * 1.2) / 15) ** 1.5) put(cx + x, cy + y, glow);
+    const on = (x, y) => y >= 0 && y < h && x >= 0 && x < w && rows[y][x] !== '.';
+    for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) {
+      if (on(x, y)) put(x0 + x, y0 + y, cols[rows[y][x]]);
+      else if (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1)) put(x0 + x, y0 + y, '#101018');
+    }
+  };
+  // Three places to go: a framed wall, an arched doorway with a step, and its symbol lit up above.
+  for (const [ax, ay, aw, ah, py, place] of LAB2_CASES) {
     sb(DARK, ax - 3, ay - 3, aw + 6, ah + 6, 1);
     for (let y = ay; y < ay + ah; y++) for (let x = ax; x < ax + aw; x++) {
       const spot = 1 - Math.abs(x - (ax + aw / 2)) / (aw / 2);
       put(x, y, bayer(x, y) < spot * 0.5 * (1 - (y - ay) / ah) + 0.05 ? '#2a3a5a' : '#0c1020');
     }
     const cx = Math.round(ax + aw / 2);
-    // Pedestal (you can stand on it).
-    sb(['#3a2a04', '#7a5a10', '#c8a030', '#f8e080'], cx - 23, py, 46, 6, 1);
-    // Glass dome.
-    const dh = 30, dw = 19;
-    for (let y = py - dh; y < py; y++) for (let x = cx - dw; x <= cx + dw; x++) {
-      const u = (x - cx) / dw, v = (py - y) / dh;
-      if (u * u + v * v > 1) continue;
-      const edge = u * u + v * v > 0.86;
-      const shine = u < -0.35 && u > -0.55 && v > 0.35 && v < 0.75;   // a thin glint on the glass
-      if (edge) put(x, y, '#a0d8ff');
-      else if (shine) put(x, y, '#e8f8ff');
-      else if (bayer(x, y) > 0.7) put(x, y, '#3a6a9a');
+    // Doorway step (you can stand on it).
+    sb(STEEL, cx - 23, py, 46, 6, 1);
+    // Arched doorway: straight sides, round top, dark inside with faint stripes.
+    const dw = 15, dh = 34, top = py - dh;
+    for (let y = top - 2; y < py; y++) for (let x = cx - dw - 2; x <= cx + dw + 2; x++) {
+      const inArch = (r) => {
+        const ry = top + r;                     // center of the round top
+        return Math.abs(x - cx) <= r && (y >= ry || Math.hypot(x - cx, y - ry) <= r);
+      };
+      if (inArch(dw)) put(x, y, (x + y) % 5 === 0 ? '#121a2c' : '#06080e');
+      else if (inArch(dw + 2)) put(x, y, (x - cx) + (y - top) < 0 ? STEEL[3] : STEEL[1]);
     }
-    // The invention, with a soft glow behind it.
-    const iy = py - dh - 4;
-    for (let y = -12; y <= 12; y++) for (let x = -14; x <= 14; x++)
-      if (bayer(x + 32, y + 32) < 0.7 * Math.max(0, 1 - Math.hypot(x, y * 1.2) / 13) ** 2) put(cx + x, iy - 10 + y, '#5a88e0');
-    if (item === 'blaster') {
-      l2x.drawImage(SPR.blaster, 0, 0, SPR.blaster.width, SPR.blaster.height, cx - 12, iy - 18, SPR.blaster.width * 2, SPR.blaster.height * 2);
-    } else if (item === 'disks') {
-      // A stack of floating hover-disks.
-      [[10, 0], [14, 9], [11, 18], [16, 27], [12, 36]].forEach(([rx, oy]) => {
-        const y0 = ay + 8 + oy;
-        for (let y = -3; y <= 3; y++) for (let x = -rx; x <= rx; x++) {
-          const d = (x / rx) ** 2 + (y / 3) ** 2;
-          if (d > 1) continue;
-          put(cx + x, y0 + y, d > 0.7 ? '#101018' : y < 0 ? (x < 0 ? '#e0e8f8' : '#a0b0d0') : y === 0 ? '#40e0ff' : '#5a6a8a');
-        }
-      });
-    } else {
-      // A thin rod with a glowing crystal tip.
-      for (let y = iy - 26; y < iy; y++) { put(cx - 1, y, '#f8e080'); put(cx, y, '#a07c10'); }
-      [[0, -30, '#f0b0ff'], [-1, -29, '#a848e0'], [1, -29, '#a848e0'], [0, -28, '#a848e0'], [0, -29, '#ffffff']].forEach(([dx, dy, c]) => put(cx + dx, iy + dy, c));
-    }
+    drawIcon(place, cx, Math.round((ay + top - 4) / 2), place === 'money' ? '#2a6a3a' : place === 'hammer' ? '#5a5a7a' : '#2a5a8a');
   }
 }
 const LAB2_PLATFORMS = [
   { x: 0, y: LAB2_FLOOR, w: LAB2_W },
   { x: 32, y: LAB2_FLOOR - 40, w: 62 },                        // console top
   ...LAB2_LEDGES.map(([x, y, w]) => ({ x, y, w })),
-  ...LAB2_CASES.map(([ax, ay, aw, ah, py]) => ({ x: Math.round(ax + aw / 2) - 23, y: py, w: 46 })),   // pedestals
+  ...LAB2_CASES.map(([ax, ay, aw, ah, py]) => ({ x: Math.round(ax + aw / 2) - 23, y: py, w: 46 })),   // doorsteps
 ];
 // More scientists, in different hair, skin and tie colors: [x, footY, facing left?, look]
 function docLook(over) {
@@ -2827,6 +2861,7 @@ const LAB_LINES = [
   ['SCIENTIST', 'AH-HA! YOU GOT ZAPPED BY OUR PROTOTYPE OF OUR INTERDIMENSIONAL GROUNDER.', true],
   ['SCIENTIST', "WE THOUGHT IT DIDN'T WORK, BUT TURNS OUT WE WERE MISTAKEN."],
   ['SCIENTIST', 'COME, WE HAVE MUCH TO SHOW YOU.'],
+  ['SCIENTIST', "MEET ME IN THE REPAIR SHOP. IT'S THE ONE WITH THE HAMMER SYMBOL."],
 ];
 const DOC_TALK_X = 74, DOC_LAB_X = 200;
 let labScene = null, labTalked = false;
@@ -2857,11 +2892,13 @@ function updateLabScene(dt) {
       if (sc.i >= LAB_LINES.length) sc.phase = 'leave';
     }
   } else if (sc.phase === 'leave') {
-    // "Come" - he heads back over to his computer.
+    // He heads off through the far door to the repair shop.
     Object.assign(doc, { flip: false, moving: true });
-    doc.x += WALK_SPEED * dt; doc.walkT += dt; momSteps(doc);
-    if (doc.x >= DOC_LAB_X) {
-      Object.assign(doc, { x: DOC_LAB_X, flip: true, moving: false });
+    doc.x += WALK_SPEED * 1.4 * dt; doc.walkT += dt; momSteps(doc);
+    camX += (Math.max(0, Math.min(LAB_W - W, doc.x - W / 2)) - camX) * (1 - Math.pow(0.9, dt * 60));
+    if (doc.x >= LAB_NEXT_DOOR_X) {
+      sfx.door();
+      Object.assign(doc, { room: 'repair', moving: false });
       labScene = null;
       labTalked = true;
       state = 'play';
@@ -3221,7 +3258,7 @@ function debugPlace(level, where, x, flip) {
   if (level >= 3) ringTouched = true;
   if (level >= 4) { momPraised = true; exitOpen = true; exitOpenT = 1; }
   if (level >= 5) { bossDone = true; portalOn = true; labDoorT = 1; Object.assign(doc, { room: 'lab', x: DOC_LAB_X, flip: true }); }
-  if (level >= 6) labTalked = true;
+  if (level >= 6) { labTalked = true; doc.room = 'repair'; }
   room = where;
   Object.assign(player, { x, y: roomFloor(), vx: 0, vy: 0, onGround: true, sitting: false, flip, pose: null });
   camY = camYFor(player.y);
