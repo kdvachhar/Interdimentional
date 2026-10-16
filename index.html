@@ -112,6 +112,12 @@ const sfx = {
     [320, 467, 891, 1230].forEach((f, i) => tone({ type: i % 2 ? 'square' : 'sine', f0: f, f1: f * 0.98, dur: 0.7, vol: 0.06 }));
     noise({ dur: 0.12, vol: 0.2, f0: 2000, f1: 300 });
   },
+  robot: () => tone({ f0: [520, 780, 1040, 660][Math.floor(Math.random() * 4)], dur: 0.035, vol: 0.05 }),
+  whir: () => {
+    noise({ dur: 1.0, vol: 0.12, filter: 'bandpass', f0: 600, f1: 1400, q: 6, attack: 0.15 });
+    tone({ type: 'sawtooth', f0: 90, f1: 160, dur: 1.0, vol: 0.04, attack: 0.15 });
+    tone({ type: 'sine', f0: 880, f1: 1320, dur: 0.25, vol: 0.06, delay: 0.7 });
+  },
   ahha: () => {
     tone({ f0: 520, f1: 880, dur: 0.12, vol: 0.12 });
     tone({ f0: 880, f1: 1320, dur: 0.25, vol: 0.12, delay: 0.12 });
@@ -2375,19 +2381,20 @@ function lineDone(shown, len) {
   if (go) sfx.blip();
   return go;
 }
-function drawCaption(speaker, text, shown) {
+const ROBOT_TEXT = { rows: ['#e8ffff', '#80f0ff', '#40c0e0'], outline: '#000000' };
+function drawCaption(speaker, text, shown, style = GOLD) {
   const lines = wrapText(text, 34);
   const w = W - 16, h = lines.length * 10 + 20;
   ctx.globalAlpha = 0.72;
   ctx.drawImage(panel(w, h, '#06060e', 4), 8, 4);
   ctx.globalAlpha = 1;
-  drawAt(textImg(speaker, { rows: ['#ffffff', '#c8ffd0'], outline: '#000000' }), 16, 9);
+  drawAt(textImg(speaker, style === ROBOT_TEXT ? { rows: ['#80f0ff'], outline: '#000000' } : { rows: ['#ffffff', '#c8ffd0'], outline: '#000000' }), 16, 9);
   let offset = 0;
   lines.forEach((line, i) => {
     const n = Math.max(0, Math.min(line.length, shown - offset));
     offset += line.length + 1;
     if (!n) return;
-    const img = textImg(line, GOLD);
+    const img = textImg(line, style);
     ctx.drawImage(img, 0, 0, 3 + n * 6, img.height, 16 - 3, 20 + i * 10 - 3, 3 + n * 6, img.height);
   });
   if (shown >= text.length && Math.floor(performance.now() / 300) % 2) {
@@ -2400,6 +2407,7 @@ function drawCaption(speaker, text, shown) {
 
 // Metroid Fusion-style minimap in the corner.
 function drawHUD(now) {
+  if (zedOn) drawStatsHUD();
   // Minimap: the alley, the living room, and the town beyond the locked door. Current room is lit.
   const mx = W - 112, my = 2;
   ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 112, 14);
@@ -2549,6 +2557,8 @@ function updateDoor(dt) {
   doorT = null;
   fadeInT = 0.4;
   if (room === 'lab' && !labTalked) startLabScene();
+  if (room === 'repair' && !zedOn && doc.room === 'repair') startZedScene();
+  if (zedOn) zedSnap();
   // Once the trash is out, Mom is waiting in the living room.
   if (room === 'living' && trashDone) {
     mom = { x: MOM_WAIT_X, y: FLOOR_Y, flip: true, walkT: 0, moving: false };
@@ -2622,6 +2632,7 @@ function startCutscene() {
   ringTouched = false;
   boss = null; bossDone = false; portalOn = false; twistSnap = null; labDoorT = 0;
   labScene = null; labTalked = false; enterQueued = false;
+  zedScene = null; zedOn = false;
   Object.assign(doc, { room: 'town3', x: 840, flip: false, walkT: 0, moving: false });
   toast = null;
   room = 'living';
@@ -2796,6 +2807,7 @@ function renderLevel(now) {
   if (state === 'boss' && boss.phase === 'toLab') drawLabWallFront();
   if (room === 'alley') drawThrow();
   if (room === 'living') drawDaylight();
+  if (zedOn || (zedScene && zedScene.zedIn)) drawZed(now);
   drawParticles();
   ctx.restore();
 
@@ -2817,6 +2829,8 @@ function renderLevel(now) {
     drawBossScene();
   } else if (state === 'labScene') {
     drawLabScene();
+  } else if (state === 'zedScene') {
+    drawZedScene(now);
   } else {
     drawInteractPrompt(now);
     drawToast(now);
@@ -3249,6 +3263,274 @@ function drawLabScene() {
   }
 }
 
+// ---------- Shaded shape painter (Zed and the close-up hands) ----------
+// Parts are shapes in design units; `sc` is pixels per unit. Each part gets
+// light from the top-left and its own black outline.
+const SHAPE = {
+  ell: (cx, cy, rx, ry) => (x, y) => { const u = (x - cx) / rx, v = (y - cy) / ry; return u * u + v * v <= 1 ? [u, v] : null; },
+  sq: (cx, cy, rx, ry) => (x, y) => { const u = (x - cx) / rx, v = (y - cy) / ry; return u ** 4 + v ** 4 <= 1 ? [u ** 3, v ** 3] : null; },
+  cap: (x1, y1, x2, y2, r1, r2 = r1) => (x, y) => {
+    const dx = x2 - x1, dy = y2 - y1;
+    const t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)));
+    const r = r1 + (r2 - r1) * t, ex = x - (x1 + dx * t), ey = y - (y1 + dy * t);
+    return ex * ex + ey * ey <= r * r ? [ex / r, ey / r] : null;
+  },
+};
+function paintParts(w, h, parts, sc = 1) {
+  const [c, g] = makeCanvas(w, h);
+  const L = [-0.45, -0.6, 0.66];
+  for (const pt of parts) {
+    const hit = (x, y) => pt.hit((x + 0.5) / sc, (y + 0.5) / sc);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const n = hit(x, y);
+      if (!n) continue;
+      const edge = !hit(x - 1, y) || !hit(x + 1, y) || !hit(x, y - 1) || !hit(x, y + 1);
+      let col;
+      if (edge) col = pt.line || '#101018';
+      else {
+        const nz = Math.sqrt(Math.max(0, 1 - n[0] * n[0] - n[1] * n[1]));
+        const l = Math.max(0, L[0] * n[0] + L[1] * n[1] + L[2] * nz);
+        const t = Math.max(0, Math.min(3, Math.floor(l * 3.6 + bayer(x, y) - 0.3)));
+        col = typeof pt.fill === 'function' ? pt.fill((x + 0.5) / sc, (y + 0.5) / sc, t) : pt.fill[t];
+      }
+      g.fillStyle = col; g.fillRect(x, y, 1, 1);
+    }
+  }
+  return c;
+}
+
+// ---------- Zed, the drone ----------
+// A rounded silver body with two eyes, a seam and two little teeth; four
+// rotors on arms up top, and two dangling arms with claw hands.
+const ZED_RAMP = ['#3a4458', '#7080a0', '#b0bcd8', '#e8f0ff'];
+const ROTOR = ['#14141c', '#2a2a38', '#4a4a5c', '#7a7a90'];
+function zedParts(phase) {
+  const X = x => 64 - x, P = (hit, fill, line) => ({ hit, fill, line });
+  const { ell, sq, cap } = SHAPE;
+  const spin = (x, y, t) => (Math.floor(x * 1.5) + phase * 3) % 7 === 0 ? '#d8e0f0' : ROTOR[t];
+  const parts = [];
+  for (const m of [x => x, X]) {
+    parts.push(
+      P(cap(m(18), 24, m(9), 23, 1.7, 1.4), ZED_RAMP), P(cap(m(9), 23, m(7), 12, 1.4, 1.2), ZED_RAMP),   // outer arm
+      P(ell(m(7), 10, 8.5, 2.4), spin),                                                                  // flat rotor
+      P(cap(m(27), 16, m(23), 8, 1.3, 1.1), ZED_RAMP),                                                   // inner stalk
+      P(ell(m(22), 6, 4.6, 4), spin),                                                                    // round rotor
+      P(cap(m(26), 28, m(24), 39, 1.5, 1.3), ZED_RAMP),                                                  // dangling arm
+      P(cap(m(24), 39, m(21), 44, 0.9), ZED_RAMP), P(cap(m(24), 39, m(24), 45, 0.9), ZED_RAMP),         // claw fingers
+      P(cap(m(24), 39, m(27), 44, 0.9), ZED_RAMP),
+    );
+  }
+  parts.push(
+    P(sq(32, 22, 16, 7.5), (x, y, t) => Math.abs(y - 25) < 0.55 && Math.abs(x - 32) < 9 ? '#2a3448' : ZED_RAMP[t]),   // body + seam
+    P(sq(30, 30.6, 1.7, 1.5), ['#a0a8b8', '#d0d8e8', '#f0f4ff', '#ffffff']),                                           // teeth
+    P(sq(34, 30.6, 1.7, 1.5), ['#a0a8b8', '#d0d8e8', '#f0f4ff', '#ffffff']),
+    P(ell(28.5, 19, 1.5, 1.4), ['#1890b0', '#40e0ff', '#80f0ff', '#e8ffff'], '#06202a'),                              // eyes
+    P(ell(35.5, 19, 1.5, 1.4), ['#1890b0', '#40e0ff', '#80f0ff', '#e8ffff'], '#06202a'),
+  );
+  return parts;
+}
+const ZED_SMALL = [0, 1].map(ph => paintParts(26, 19, zedParts(ph), 0.4));
+const ZED_BIG = [0, 1].map(ph => paintParts(84, 60, zedParts(ph), 1.3));
+const zed = { x: 0, y: 0, flip: false };
+let zedOn = false;                 // Zed is with you (and the stats HUD is on)
+function zedSnap() { zed.x = player.x + (player.flip ? 16 : -16); zed.y = player.y - 32; zed.flip = player.flip; }
+function updateZed(dt) {
+  if (!zedOn || state === 'zedScene') return;
+  const p = player, k = 1 - Math.pow(0.9, dt * 60);
+  zed.x += (p.x + (p.flip ? 16 : -16) - zed.x) * k;
+  zed.y += (p.y - 32 - zed.y) * k;
+  zed.flip = p.flip;
+}
+function drawZed(now) {
+  const img = ZED_SMALL[Math.floor(now / 60) % 2];
+  ctx.save();
+  ctx.translate(Math.round(zed.x - camX), Math.round(zed.y + Math.sin(now / 250) * 2));
+  if (zed.flip) ctx.scale(-1, 1);
+  ctx.drawImage(img, -Math.floor(img.width / 2), -Math.floor(img.height / 2));
+  ctx.restore();
+}
+
+// ---------- Stats HUD: five ring "health" pips and an empty slot ----------
+const [RING_FULL, rfx] = makeCanvas(10, 10), [RING_EMPTY, rex] = makeCanvas(10, 10), [HUD_SLOT, hsx] = makeCanvas(14, 14);
+for (const [g, full] of [[rfx, true], [rex, false]]) for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) {
+  const d = Math.hypot(x - 4.5, y - 4.5);
+  let c = null;
+  if (d > 4.9) continue;
+  if (d > 4.2) c = '#101018';
+  else if (d > 2.4) c = (x + y < 8) ? '#d0d8e8' : '#7080a0';
+  else if (d > 1.7) c = '#101018';
+  else c = full ? (x + y < 9 ? '#e8ffff' : '#40e0ff') : '#1a2030';
+  g.fillStyle = c; g.fillRect(x, y, 1, 1);
+}
+rfx.fillStyle = '#ff3030'; rfx.fillRect(7, 2, 1, 1); rfx.fillStyle = '#40e040'; rfx.fillRect(7, 7, 1, 1);
+for (let y = 0; y < 14; y++) for (let x = 0; x < 14; x++) {
+  const d = Math.hypot(x - 6.5, y - 6.5);
+  if (d > 6.9) continue;
+  hsx.fillStyle = d > 6 ? '#101018' : d > 4.8 ? (x + y < 12 ? '#d0d8e8' : '#7080a0') : d > 4 ? '#101018' : '#06080e';
+  hsx.fillRect(x, y, 1, 1);
+}
+function drawStatsHUD() {
+  ctx.globalAlpha = 0.6;
+  ctx.drawImage(panel(80, 18, '#06060e', 3), 1, 1);
+  ctx.globalAlpha = 1;
+  for (let i = 0; i < player.maxHp; i++) ctx.drawImage(i < player.hp ? RING_FULL : RING_EMPTY, 5 + i * 11, 5);
+  ctx.drawImage(HUD_SLOT, 5 + player.maxHp * 11 + 3, 3);
+}
+
+// ---------- Close-up: the scientist's hands, opening to show Zed ----------
+const SKIN = ['#8a4a28', '#b87048', '#e09868', '#f8c098'];
+const PALM = ['#b87048', '#e09868', '#f8c098', '#ffe0c0'];
+const NAIL = ['#c89890', '#e8c0b8', '#f8dcd8', '#fff4f0'];
+const COAT = ['#9898a8', '#d0d0dc', '#ececf4', '#ffffff'];
+const HANDS_CLOSED = (() => {
+  const { ell, cap } = SHAPE, P = (hit, fill, line) => ({ hit, fill, line });
+  const lowFingers = [[38, 56, 40, 39], [52, 58, 53, 37], [66, 58, 66, 37], [80, 56, 78, 39]];
+  const upFingers = [[44, 30, 42, 50], [58, 28, 56, 53], [72, 28, 70, 53], [86, 30, 84, 49]];
+  return paintParts(120, 84, [
+    P(ell(18, 78, 17, 11), COAT), P(ell(102, 78, 17, 11), COAT),                    // sleeves
+    P(cap(24, 72, 40, 58, 10, 12), SKIN), P(ell(56, 56, 38, 15), SKIN),               // bottom hand, palm up
+    P(cap(26, 52, 17, 40, 6, 5), SKIN),                                                // its thumb
+    ...lowFingers.flatMap(([x1, y1, x2, y2]) => [P(cap(x1, y1, x2, y2, 6, 5), SKIN), P(ell(x2, y2 + 1.5, 3.4, 3), NAIL)]),
+    P(cap(96, 72, 82, 46, 10, 12), SKIN), P(ell(64, 34, 36, 15), SKIN),               // top hand, cupped over it
+    P(cap(32, 36, 25, 47, 5.5, 5), SKIN),                                              // its thumb
+    ...upFingers.flatMap(([x1, y1, x2, y2]) => [P(cap(x1, y1, x2, y2, 6.2, 5.4), SKIN), P(ell(x2, y2 - 1.5, 3.6, 3), NAIL)]),
+  ]);
+})();
+const HAND_OPEN = (() => {
+  const { ell, cap } = SHAPE, P = (hit, fill, line) => ({ hit, fill, line });
+  return paintParts(80, 72, [
+    P(ell(14, 66, 15, 9), COAT),                                                       // sleeve
+    P(cap(20, 62, 32, 46, 9, 11), SKIN),                                               // wrist
+    ...[[24, 34, 19, 21, 5], [34, 31, 31, 16, 5], [46, 31, 46, 15, 5], [57, 34, 61, 21, 4.5]]
+      .flatMap(([x1, y1, x2, y2, r]) => [P(cap(x1, y1, x2, y2, r, r - 0.5), SKIN), P(ell(x2, y2 + 1, r - 1.6, 2.6), NAIL)]),
+    P(ell(40, 40, 24, 13), PALM),                                                      // palm up
+    P(cap(56, 46, 67, 38, 5, 4.5), SKIN),                                              // thumb
+  ]);
+})();
+// The scientist's coat filling the screen behind his hands.
+const [closeBg, cbx] = makeCanvas(W, H);
+{
+  const put = (x, y, c) => { cbx.fillStyle = c; cbx.fillRect(x, y, 1, 1); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put(x, y, bayer(x, y) > y / H - 0.3 ? '#2a2430' : '#1a1620');
+  for (let y = 0; y < H; y++) for (let x = 40; x < 200; x++) {
+    const lap = Math.abs(x - 120) < (y < 70 ? 22 - y * 0.3 : 0);
+    const edge = x === 40 || x === 199;
+    let c = edge ? '#101018' : bayer(x, y) > 0.2 ? '#ececf4' : '#d0d0dc';
+    if (x < 60 || x > 180) c = edge ? '#101018' : bayer(x, y) > 0.4 ? '#d0d0dc' : '#9898a8';
+    if (lap) c = Math.abs(x - 120) < 4 && y > 4 ? (bayer(x, y) > 0.3 ? '#2c5ab4' : '#1c3a82') : '#c8d8f0';   // shirt and blue tie
+    if (Math.abs(Math.abs(x - 120) - (22 - y * 0.3)) < 0.8 && y < 70) c = '#101018';                       // lapel edges
+    put(x, y, c);
+  }
+  for (let y = 0; y < 5; y++) for (let x = 104; x < 137; x++) put(x, y, y === 4 ? '#8a4a28' : '#e09868');   // his chin at the top
+}
+function drawCloseup(sc, now) {
+  ctx.drawImage(closeBg, 0, 0);
+  const open = sc.phase === 'closed' ? 0 : sc.phase === 'open' ? Math.min(1, sc.t / 0.8) : 1;
+  const e = open * open * (3 - 2 * open);
+  if (open === 0) {
+    const shake = sc.t > 0.6 ? Math.round(Math.sin(sc.t * 60)) : 0;    // something wiggles inside
+    ctx.drawImage(HANDS_CLOSED, 60 + shake, 74);
+  } else {
+    const off = Math.round(e * 34);
+    ctx.drawImage(HAND_OPEN, 120 - 78 - off, 86);
+    ctx.save(); ctx.translate(120 + 78 + off, 86); ctx.scale(-1, 1); ctx.drawImage(HAND_OPEN, 0, 0); ctx.restore();
+    // Zed rises up out of his hands.
+    const zy = Math.round(118 - e * 38 + Math.sin(now / 250) * 2);
+    const img = ZED_BIG[Math.floor(now / 50) % 2];
+    ctx.drawImage(img, 120 - img.width / 2, zy - img.height / 2);
+    if (sc.phase === 'open' && Math.random() < 0.7) {
+      ctx.fillStyle = Math.random() < 0.5 ? '#ffffff' : '#80f0ff';
+      ctx.fillRect(120 + Math.round((Math.random() - 0.5) * 90), zy + Math.round((Math.random() - 0.5) * 60), 1, 1);
+    }
+  }
+}
+
+// ---------- Cutscene: getting Zed in the repair shop ----------
+// [speaker, text]; ZED speaks in robot text.
+const ZED_LINES = {
+  d1: ['SCIENTIST', "GREAT, YOU'VE MADE IT! SORRY ABOUT THE PLATFORMS."],
+  d2: ['SCIENTIST', 'US SCIENTISTS ARE REALLY OUT OF SHAPE. ANYWAY, I HAVE THIS FOR YOU.'],
+  z1: ['ZED', 'HELLO. I AM YOUR NEW FAITHFUL COMPANION, ZED.'],
+  d3: ['SCIENTIST', 'ZED IS A ROBOT REQUIRED TO COME WITH YOU. HE IS PAIRED WITH THE RING YOU GOT ZAPPED BY.'],
+  d4: ['SCIENTIST', 'HE WILL FOLLOW YOU AND IS NOW LINKED WITH YOU, WHICH MEANS IF YOU TAKE DAMAGE, THEN ZED TAKES DAMAGE.'],
+  z2: ['ZED', 'I HAVE SOMETHING FOR YOU.'],
+  z3: ['ZED', 'THIS WILL LET YOU SEE YOUR STATS THROUGHOUT OUR ADVENTURE.'],
+  d5: ['SCIENTIST', 'TALK TO MY FRIEND AT THE LAB SHOP. HE HAS SOMETHING FOR YOU.'],
+};
+const ZED_NEXT = { wait: 'd1', d1: 'd2', d2: 'toClose', toClose: 'closed', closed: 'open', open: 'z1', z1: 'fromClose',
+                   fromClose: 'fly', fly: 'd3', d3: 'd4', d4: 'z2', z2: 'zap', zap: 'z3', z3: 'd5', d5: 'end' };
+let zedScene = null;
+function startZedScene() {
+  state = 'zedScene';
+  held.clear();
+  Object.assign(player, { vx: 0, flip: false });
+  zedScene = { phase: 'wait', t: 0, shown: 0, closeup: false, zedIn: false, hud: false };
+}
+function updateZedScene(dt) {
+  const sc = zedScene;
+  sc.t += dt;
+  const next = () => { sc.phase = ZED_NEXT[sc.phase]; sc.t = 0; sc.shown = 0; };
+  const line = ZED_LINES[sc.phase];
+  if (line) {
+    const [who, text] = line, prev = sc.shown;
+    sc.shown = Math.min(text.length, sc.t * 30);
+    if (who === 'ZED') { for (let i = Math.floor(prev); i < Math.floor(sc.shown); i++) if (text[i] !== ' ') sfx.robot(); }
+    else voiceBlips(prev, sc.shown, text, false);
+    if (lineDone(sc.shown, text.length)) next();
+    return;
+  }
+  if (sc.phase === 'wait') { if (sc.t > 0.6) next(); }
+  else if (sc.phase === 'toClose') { if (sc.t > 0.4) { sc.closeup = true; next(); } }
+  else if (sc.phase === 'closed') { if (sc.t > 1.2) { next(); sfx.whir(); } }
+  else if (sc.phase === 'open') { if (sc.t > 1.1) next(); }
+  else if (sc.phase === 'fromClose') {
+    if (sc.t > 0.4 && sc.closeup) {
+      sc.closeup = false; sc.zedIn = true;
+      zed.x = REPAIR_DOC_X - 14; zed.y = REPAIR_COUNTER.y - 12; zed.flip = true;
+    }
+    if (sc.t > 0.8) next();
+  } else if (sc.phase === 'fly') {
+    // Zed zooms over to hover by your shoulder.
+    const k = 1 - Math.pow(0.92, dt * 60);
+    zed.x += (player.x + 16 - zed.x) * k; zed.y += (player.y - 32 - zed.y) * k;
+    if (sc.t > 1.2) next();
+  } else if (sc.phase === 'zap') {
+    if (sc.t < 0.05 && !sc.zapped) { sc.zapped = true; sfx.zap(); }
+    player.flash = sc.t < 0.9 && Math.floor(sc.t * 20) % 2 === 0;
+    player.shakeX = sc.t < 0.9 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    if (sc.t > 1.0 && !sc.hud) { sc.hud = true; sfx.ding(); }
+    if (sc.t > 2.2) { player.flash = false; player.shakeX = 0; next(); }
+  } else if (sc.phase === 'end') {
+    zedScene = null;
+    zedOn = true;
+    state = 'play';
+  }
+}
+function drawZedScene(now) {
+  const sc = zedScene;
+  if (sc.phase === 'zap' && sc.t < 0.9) drawBolt(zed.x, zed.y + 6, player.x, player.y - 14);
+  // The HUD flickers on after the zap.
+  if (sc.hud && (sc.phase !== 'zap' || sc.t > 1.3 || Math.floor(sc.t * 16) % 2)) drawStatsHUD();
+  if (sc.closeup) {
+    drawCloseup(sc, now);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, 10); ctx.fillRect(0, H - 10, W, 10);   // movie bars
+  }
+  const line = ZED_LINES[sc.phase];
+  if (line) drawCaption(line[0], line[1], Math.floor(sc.shown), line[0] === 'ZED' ? ROBOT_TEXT : GOLD);
+  // Stepped fades in and out of the close-up.
+  const fade = sc.phase === 'toClose' ? sc.t / 0.4 : sc.phase === 'fromClose' ? (sc.t < 0.4 ? 1 : 1 - (sc.t - 0.4) / 0.4) : 0;
+  if (fade > 0) {
+    ctx.globalAlpha = Math.min(1, Math.ceil(fade * 4) / 4);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+  if (fadeInT > 0) {
+    ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
 // ---------- Cutscene: he notices the ring, touches it, gets zapped ----------
 const RING_TOUCH_X = 87;                // where he stands to touch the ring
 let ringScene = null, ringTouched = false;
@@ -3458,7 +3740,9 @@ function updateLevel(dt) {
   else if (state === 'praise') updatePraiseScene(dt);
   else if (state === 'boss') updateBossScene(dt);
   else if (state === 'labScene') updateLabScene(dt);
+  else if (state === 'zedScene') updateZedScene(dt);
   else updatePlay(dt);
+  updateZed(dt);
   fadeInT = Math.max(0, fadeInT - dt);
   updateParticles(dt);
 }
@@ -3516,7 +3800,7 @@ function loop(now) {
     }
   } else if (state === 'name' || state === 'confirm') {
     renderName(now);
-  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene') {
+  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene') {
     updateLevel(dt);
     renderLevel(now);
   }
@@ -3529,7 +3813,7 @@ addEventListener('keydown', e => {
   else if (state === 'select') { if (chosenAt === null && e.code === 'Escape') backToTitle(); }
   else if (state === 'name') nameKey(e);
   else if (state === 'confirm') confirmKey(e);
-  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene') {
+  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene') {
     // Cutscenes can't be skipped, but Enter moves on to the next dialogue box.
     if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) enterQueued = true;
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -3569,13 +3853,14 @@ const DEBUG_SPOTS = [
     ['Lab Cutscene', () => { debugPlace(5, 'lab', LAB_IN_DOOR_X + 18, false); startLabScene(); }],
     ['Lab', () => debugPlace(6, 'lab', LAB_IN_DOOR_X + 18, false)],
     ['Lab Room 2', () => debugPlace(6, 'lab2', LAB_IN_DOOR_X + 18, false)],
-    ['Repair Shop', () => debugPlace(6, 'repair', REPAIR_DOOR_X + 18, false)],
-    ['$ Shop', () => debugPlace(6, 'shop', SHOP_DOOR_X + 18, false)],
-    ['Teleporter', () => debugPlace(6, 'tele', TELE_DOOR_X + 18, false)],
+    ['Zed Cutscene', () => { debugPlace(6, 'repair', REPAIR_DOOR_X + 18, false); startZedScene(); }],
+    ['Repair Shop', () => debugPlace(7, 'repair', REPAIR_DOOR_X + 18, false)],
+    ['$ Shop', () => debugPlace(7, 'shop', SHOP_DOOR_X + 18, false)],
+    ['Teleporter', () => debugPlace(7, 'tele', TELE_DOOR_X + 18, false)],
   ]],
 ];
 // Progress levels: 0 intro done, 1 trash picked up, 2 trash thrown, 3 ring zapped,
-// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done.
+// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done, 7 got Zed.
 function debugPlace(level, where, x, flip) {
   if (!playerName) playerName = 'PLAYER';
   startCutscene();
@@ -3587,6 +3872,7 @@ function debugPlace(level, where, x, flip) {
   if (level >= 4) { momPraised = true; exitOpen = true; exitOpenT = 1; }
   if (level >= 5) { bossDone = true; portalOn = true; labDoorT = 1; Object.assign(doc, { room: 'lab', x: DOC_LAB_X, flip: true }); }
   if (level >= 6) { labTalked = true; doc.room = 'repair'; }
+  if (level >= 7) zedOn = true;
   room = where;
   Object.assign(player, { x, y: roomFloor(), vx: 0, vy: 0, onGround: true, sitting: false, flip, pose: null });
   camY = camYFor(player.y);
@@ -3594,6 +3880,7 @@ function debugPlace(level, where, x, flip) {
   camX = Math.max(0, Math.min(curRoom().w - W, x - W * 0.35));
   state = 'play';
   fadeInT = 0.4;
+  if (zedOn) zedSnap();
 }
 
 const debugMenu = document.createElement('div');
