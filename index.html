@@ -2643,7 +2643,7 @@ function startCutscene() {
   labScene = null; labTalked = false; enterQueued = false;
   zedScene = null; zedOn = false;
   dooplyScene = null; hasPistol = false; pistolNewT = 0; shootT = 0; bullets = []; explosions = [];
-  train = null; trainDone = false; aiming = false; TRAIN_PLATFORMS.length = TRAIN_BASE_PLATFORMS;
+  train = null; trainDone = false; aiming = false; setAbilities(false); TRAIN_PLATFORMS.length = TRAIN_BASE_PLATFORMS;
   Object.assign(doc, { room: 'town3', x: 840, flip: false, walkT: 0, moving: false });
   toast = null;
   room = 'living';
@@ -3588,16 +3588,19 @@ const PISTOL_HELD = sprite([
 let hasPistol = false, pistolNewT = 0, shootT = 0, shotCD = 0, bullets = [];
 // Aim mode: hold the mouse/touchpad down and a red line follows the pointer.
 let aiming = false, gunAngle = 0;
+// Abilities Dr. Selcorn unlocks as he explains them in training.
+const abilities = { shoot: false, up: false, down: false, aim: false };
+const setAbilities = on => Object.keys(abilities).forEach(k => abilities[k] = on);
 const mouse = { x: W / 2, y: H / 2 };
 const gunOrigin = () => [player.x, player.y - 14];
 const mouseWorld = () => [mouse.x + camX, mouse.y + camY];
 function shoot() {
-  if (!hasPistol || shotCD > 0 || doorT) return;
+  if (!hasPistol || !abilities.shoot || shotCD > 0 || doorT) return;
   const p = player, [ox, oy] = gunOrigin();
   // Direction: the aim line, or up (Up), or down while in the air (Down), or the way you face.
   if (aiming) { const [mx, my] = mouseWorld(); gunAngle = Math.atan2(my - oy, mx - ox); }
-  else if (held.has('ArrowUp')) gunAngle = -Math.PI / 2;
-  else if (held.has('ArrowDown') && !p.onGround) gunAngle = Math.PI / 2;
+  else if (abilities.up && held.has('ArrowUp')) gunAngle = -Math.PI / 2;
+  else if (abilities.down && held.has('ArrowDown') && !p.onGround) gunAngle = Math.PI / 2;
   else gunAngle = p.flip ? Math.PI : 0;
   const cx = Math.cos(gunAngle), cy = Math.sin(gunAngle);
   bullets.push({ x: ox + cx * 9, y: oy + cy * 9, vx: cx * 260, vy: cy * 260, life: 0.9 });
@@ -3773,6 +3776,8 @@ function updateTraining(dt) {
     tr.shown = Math.min(text.length, tr.t * 30);
     voiceBlips(prev, tr.shown, text, false);
     if (lineDone(tr.shown, text.length)) {
+      const unlock = { s2: 'shoot', s3: 'up', s4: 'down', s5: 'aim' }[tr.lines[tr.li]];
+      if (unlock && !abilities[unlock]) { abilities[unlock] = true; sfx.ding(); }
       tr.li++; tr.t = 0; tr.shown = 0;
       if (tr.li >= tr.lines.length) {
         tr.lines = null; state = 'play';
@@ -4314,7 +4319,7 @@ function debugPlace(level, where, x, flip) {
   if (level >= 6) { labTalked = true; doc.room = 'repair'; }
   if (level >= 7) zedOn = true;
   if (level >= 8) hasPistol = true;
-  if (level >= 9) trainDone = true;
+  if (level >= 9) { trainDone = true; setAbilities(true); }
   room = where;
   Object.assign(player, { x, y: roomFloor(), vx: 0, vy: 0, onGround: true, sitting: false, flip, pose: null });
   camY = camYFor(player.y);
@@ -4419,7 +4424,7 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mousemove', e => { [mouse.x, mouse.y] = canvasPoint(e); });
 canvas.addEventListener('mousedown', e => {
-  if (state !== 'play' || !hasPistol) return;
+  if (state !== 'play' || !hasPistol || !abilities.aim) return;
   [mouse.x, mouse.y] = canvasPoint(e);
   aiming = true;
   canvas.style.cursor = 'none';
