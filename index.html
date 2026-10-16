@@ -112,6 +112,10 @@ const sfx = {
     [320, 467, 891, 1230].forEach((f, i) => tone({ type: i % 2 ? 'square' : 'sine', f0: f, f1: f * 0.98, dur: 0.7, vol: 0.06 }));
     noise({ dur: 0.12, vol: 0.2, f0: 2000, f1: 300 });
   },
+  shot: () => {
+    noise({ dur: 0.12, vol: 0.2, filter: 'highpass', f0: 2500, f1: 600 });
+    tone({ f0: 520, f1: 120, dur: 0.1, vol: 0.08 });
+  },
   robot: () => tone({ f0: [520, 780, 1040, 660][Math.floor(Math.random() * 4)], dur: 0.035, vol: 0.05 }),
   whir: () => {
     noise({ dur: 1.0, vol: 0.12, filter: 'bandpass', f0: 600, f1: 1400, q: 6, attack: 0.15 });
@@ -2558,6 +2562,7 @@ function updateDoor(dt) {
   fadeInT = 0.4;
   if (room === 'lab' && !labTalked) startLabScene();
   if (room === 'repair' && !zedOn && doc.room === 'repair') startZedScene();
+  if (room === 'shop' && zedOn && !hasPistol) startDooplyScene();
   if (zedOn) zedSnap();
   // Once the trash is out, Mom is waiting in the living room.
   if (room === 'living' && trashDone) {
@@ -2633,6 +2638,7 @@ function startCutscene() {
   boss = null; bossDone = false; portalOn = false; twistSnap = null; labDoorT = 0;
   labScene = null; labTalked = false; enterQueued = false;
   zedScene = null; zedOn = false;
+  dooplyScene = null; hasPistol = false; pistolNewT = 0; shootT = 0; bullets = [];
   Object.assign(doc, { room: 'town3', x: 840, flip: false, walkT: 0, moving: false });
   toast = null;
   room = 'living';
@@ -2706,7 +2712,7 @@ function updatePlay(dt) {
   else if (left && !right) { p.vx = -RUN_SPEED; p.flip = true; }
   else if (right && !left) { p.vx = RUN_SPEED; p.flip = false; }
   else p.vx *= Math.pow(0.65, dt * 60);
-  if ((held.has('ArrowUp') || held.has('Space')) && p.onGround) {
+  if (held.has('Space') && p.onGround) {
     p.vy = JUMP_VEL;
     p.onGround = false;
     burst(p.x, p.y, DUST, 5, 25);
@@ -2797,19 +2803,23 @@ function renderLevel(now) {
     if (p.carrying) ctx.drawImage(BAG, Math.round(p.x - camX + (p.flip ? -1 : -17)), Math.round(p.y - 34));
   }
   if (room === 'town3') { drawFloaters(); drawLabOutside(); drawSci(); }
-  if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.push({ img: DOC_LOOKS[look], x, y, flip });
+  if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.unshift({ img: DOC_LOOKS[look], x, y, flip });   // behind you
   if (room === 'tele') drawTeleBeam(now);
+  if (room === 'shop') chars.unshift({ img: DOOPLY, x: DOOPLY_X, y: FLOOR_Y, flip: true });
   if (room === 'lab') drawTunnelLight(LAB_W, FLOOR_Y);
   if (room === 'lab2') drawTunnelLight(0, LAB2_FLOOR);
   if (room === 'repair') drawRepairShop();
   else if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
-  if (zedScene && zedScene.phase === 'tuck') drawZed(now);     // ducking behind you
+  const zedTucking = (zedScene && zedScene.phase === 'tuck') || (dooplyScene && dooplyScene.phase === 'tuck');
+  if (zedTucking) drawZed(now);     // ducking behind you
   chars.forEach(c => drawChar(c.img, c.x, c.y, c.flip));
   if (state === 'boss' && boss.phase === 'toLab') drawLabWallFront();
   if (room === 'alley') drawThrow();
   if (room === 'living') drawDaylight();
   // Zed only shows up when a scene calls for him; otherwise he stays tucked behind you.
-  if (zedScene && zedScene.zedIn && zedScene.phase !== 'tuck') drawZed(now);
+  if ((zedScene && zedScene.zedIn && zedScene.phase !== 'tuck') || (dooplyScene && dooplyScene.zedOut && dooplyScene.phase !== 'tuck')) drawZed(now);
+  if (room === 'shop') drawDooplyGun();
+  drawGun();
   drawParticles();
   ctx.restore();
 
@@ -2833,6 +2843,8 @@ function renderLevel(now) {
     drawLabScene();
   } else if (state === 'zedScene') {
     drawZedScene(now);
+  } else if (state === 'dooplyScene') {
+    drawDooplyScene();
   } else {
     drawInteractPrompt(now);
     drawToast(now);
@@ -3375,8 +3387,10 @@ function drawStatsHUD() {
   ctx.globalAlpha = 0.6;
   ctx.drawImage(panel(80, 18, '#06060e', 3), 1, 1);
   ctx.globalAlpha = 1;
-  for (let i = 0; i < player.maxHp; i++) ctx.drawImage(i < player.hp ? RING_FULL : RING_EMPTY, 5 + i * 11, 5);
-  ctx.drawImage(HUD_SLOT, 5 + player.maxHp * 11 + 3, 3);
+  // Item slot on the left (shows the pistol once you have it), then the five rings.
+  ctx.drawImage(HUD_SLOT, 4, 3);
+  if (hasPistol && !(pistolNewT > 0 && Math.floor(pistolNewT * 8) % 2)) ctx.drawImage(PISTOL_ICON, 5, 7);
+  for (let i = 0; i < player.maxHp; i++) ctx.drawImage(i < player.hp ? RING_FULL : RING_EMPTY, 21 + i * 11, 5);
 }
 
 // ---------- Close-up: the scientist's hands, opening to show Zed ----------
@@ -3536,6 +3550,146 @@ function drawZedScene(now) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
   }
+}
+
+// ---------- The pistol ----------
+const PISTOL = sprite([
+  '.kkkkkkkkk',
+  'kGGGGGGGGk',
+  'kgggggggk.',
+  'kkkgnk.k..',
+  '..kgnkk...',
+  '..knnk....',
+  '..kkkk....',
+]);
+const PISTOL_ICON = sprite([      // fits inside the HUD slot
+  'kkkkkkkkkk',
+  'kGGGGGGGGk',
+  'kggggggkk.',
+  'kknnkk....',
+  '.knnk.....',
+  '.kkkk.....',
+]);
+const PISTOL_HELD = sprite([
+  'kkkkkk',
+  'kGGGGk',
+  'kkgnk.',
+  '..kk..',
+]);
+let hasPistol = false, pistolNewT = 0, shootT = 0, shotCD = 0, bullets = [];
+function shoot() {
+  if (!hasPistol || shotCD > 0 || doorT) return;
+  const p = player, dir = p.flip ? -1 : 1;
+  bullets.push({ x: p.x + dir * 9, y: p.y - 14, vx: dir * 260, life: 0.9 });
+  shootT = 0.3; shotCD = 0.25;
+  sfx.shot();
+}
+function updateBullets(dt) {
+  shootT = Math.max(0, shootT - dt); shotCD = Math.max(0, shotCD - dt); pistolNewT = Math.max(0, pistolNewT - dt);
+  for (const b of bullets) { b.x += b.vx * dt; b.life -= dt; }
+  bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < curRoom().w);
+}
+function drawGun() {
+  const p = player;
+  if (hasPistol && shootT > 0 && state === 'play') {
+    const dir = p.flip ? -1 : 1;
+    ctx.save();
+    ctx.translate(Math.round(p.x - camX + dir * 5), Math.round(p.y - 15));
+    ctx.scale(dir, 1);
+    ctx.drawImage(PISTOL_HELD, 0, 0);
+    if (shootT > 0.22) { ctx.fillStyle = '#fff8c0'; ctx.fillRect(6, 0, 2, 2); ctx.fillStyle = '#f8d040'; ctx.fillRect(8, 0, 1, 1); }   // muzzle flash
+    ctx.restore();
+  }
+  for (const b of bullets) {
+    const x = Math.round(b.x - camX), y = Math.round(b.y), back = b.vx > 0 ? -1 : 1;
+    ctx.fillStyle = '#f8d040'; ctx.fillRect(x + back * 3, y, 3, 1);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 1, 1);
+  }
+}
+
+// ---------- Dr. Dooply, the scientist in the $ shop ----------
+const DOOPLY_X = 112;
+const DOOPLY = (() => {
+  const rows = [...DOC_TOP, ...DOC_STAND_LEGS];
+  rows[9] = '..ksNNNNNssk..';                         // a big mustache
+  const save = { ...PAL };
+  Object.assign(PAL, { G: '#4a2810', y: '#c8d8c0', c: '#2c9a4a', B: '#3a3a48' });
+  const img = sprite(rows);
+  Object.keys(PAL).forEach(k => delete PAL[k]);
+  Object.assign(PAL, save);
+  return img;
+})();
+const DOOPLY_LINES = {
+  p1: ['DR. DOOPLY', 'HELLO, I AM DR. DOOPLY. BOSS TOLD ME THAT HE WANTED YOU TO HAVE THIS.'],
+  p2: ['DR. DOOPLY', "SORRY, IT'S NOT MUCH. WE DON'T HAVE A BLASTER OR ANYTHING AT THE MOMENT, BUT THIS WILL DO."],
+  z1: ['ZED', "REALLY? YOU'RE A SCIENCE LAB WITH NO BLASTERS? KIND OF PATHETIC."],
+  p3: ['DR. DOOPLY', "I DIDN'T MAKE YOU TO BE UNGRATEFUL! NOW GET OUT UNTIL I HAVE STUFF."],
+};
+const DOOPLY_NEXT = { wait: 'p1', p1: 'pull', pull: 'p2', p2: 'zedOut', zedOut: 'z1', z1: 'p3', p3: 'tuck', tuck: 'leave' };
+let dooplyScene = null;
+function startDooplyScene() {
+  state = 'dooplyScene';
+  held.clear();
+  Object.assign(player, { vx: 0, flip: false });
+  dooplyScene = { phase: 'wait', t: 0, shown: 0, gun: false, zedOut: false };
+}
+function updateDooplyScene(dt) {
+  const sc = dooplyScene, p = player;
+  sc.t += dt;
+  const next = () => { sc.phase = DOOPLY_NEXT[sc.phase]; sc.t = 0; sc.shown = 0; };
+  const line = DOOPLY_LINES[sc.phase];
+  if (line) {
+    const [who, text] = line, prev = sc.shown;
+    sc.shown = Math.min(text.length, sc.t * 30);
+    if (who === 'ZED') { for (let i = Math.floor(prev); i < Math.floor(sc.shown); i++) if (text[i] !== ' ') sfx.robot(); }
+    else voiceBlips(prev, sc.shown, text, false);
+    if (lineDone(sc.shown, text.length)) next();
+    return;
+  }
+  const k = 1 - Math.pow(0.88, dt * 60);
+  if (sc.phase === 'wait') { if (sc.t > 0.6) next(); }
+  else if (sc.phase === 'pull') {
+    // He pulls a pistol out of his coat and holds it up.
+    if (sc.t > 0.4 && !sc.gun) { sc.gun = true; sfx.pickup(); }
+    if (sc.t > 1.2) next();
+  } else if (sc.phase === 'zedOut') {
+    // Zed pops out from behind you.
+    if (!sc.zedOut) { sc.zedOut = true; zed.x = p.x; zed.y = p.y - 14; sfx.whir(); }
+    zed.x += (p.x + 18 - zed.x) * k; zed.y += (p.y - 34 - zed.y) * k; zed.flip = false;
+    if (sc.t > 1.0) next();
+  } else if (sc.phase === 'tuck') {
+    zed.x += (p.x - zed.x) * k; zed.y += (p.y - 14 - zed.y) * k;
+    if (sc.t > 0.7) { sc.zedOut = false; next(); }
+  } else if (sc.phase === 'leave') {
+    // Kicked out: you walk back to the door and leave with the pistol.
+    Object.assign(p, { flip: true, vx: -WALK_SPEED });
+    p.x -= WALK_SPEED * dt; p.walkT += dt; guySteps(p);
+    if (p.x <= SHOP_DOOR_X + 4) {
+      p.vx = 0;
+      dooplyScene = null;
+      hasPistol = true; pistolNewT = 1.5;
+      state = 'play';
+      goThrough('lab2', LAB2_SHOP_X, false, true, LAB2_SHOP_Y);
+    }
+  }
+}
+function drawDooplyScene() {
+  const sc = dooplyScene;
+  const line = DOOPLY_LINES[sc.phase];
+  if (line) drawCaption(line[0], line[1], Math.floor(sc.shown), line[0] === 'ZED' ? ROBOT_TEXT : GOLD);
+  if (fadeInT > 0) {
+    ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+// The pistol in Dr. Dooply's hand, while he's giving it to you.
+function drawDooplyGun() {
+  const sc = dooplyScene;
+  if (!sc || !sc.gun || sc.phase === 'leave') return;
+  const x = Math.round(DOOPLY_X - camX) - 16, y = FLOOR_Y - 18;
+  ctx.save(); ctx.translate(x + PISTOL.width, y); ctx.scale(-1, 1); ctx.drawImage(PISTOL, 0, 0); ctx.restore();
+  if (sc.phase === 'pull' && Math.floor(sc.t * 10) % 2) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 2, y - 2, 1, 1); ctx.fillRect(x + 11, y + 1, 1, 1); ctx.fillRect(x + 4, y - 4, 1, 1); }
 }
 
 // ---------- Cutscene: he notices the ring, touches it, gets zapped ----------
@@ -3748,8 +3902,10 @@ function updateLevel(dt) {
   else if (state === 'boss') updateBossScene(dt);
   else if (state === 'labScene') updateLabScene(dt);
   else if (state === 'zedScene') updateZedScene(dt);
+  else if (state === 'dooplyScene') updateDooplyScene(dt);
   else updatePlay(dt);
   updateZed(dt);
+  updateBullets(dt);
   fadeInT = Math.max(0, fadeInT - dt);
   updateParticles(dt);
 }
@@ -3807,7 +3963,7 @@ function loop(now) {
     }
   } else if (state === 'name' || state === 'confirm') {
     renderName(now);
-  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene') {
+  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene') {
     updateLevel(dt);
     renderLevel(now);
   }
@@ -3820,13 +3976,14 @@ addEventListener('keydown', e => {
   else if (state === 'select') { if (chosenAt === null && e.code === 'Escape') backToTitle(); }
   else if (state === 'name') nameKey(e);
   else if (state === 'confirm') confirmKey(e);
-  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene') {
+  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene') {
     // Cutscenes can't be skipped, but Enter moves on to the next dialogue box.
     if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) enterQueued = true;
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   } else if (state === 'play') {
     if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); held.add(e.code); }
     else if (e.code === 'KeyE' && !e.repeat) interact();
+    else if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !e.repeat) shoot();
   }
 });
 addEventListener('keyup', e => held.delete(e.code));
@@ -3862,12 +4019,13 @@ const DEBUG_SPOTS = [
     ['Lab Room 2', () => debugPlace(6, 'lab2', LAB_IN_DOOR_X + 18, false)],
     ['Zed Cutscene', () => { debugPlace(6, 'repair', REPAIR_DOOR_X + 18, false); startZedScene(); }],
     ['Repair Shop', () => debugPlace(7, 'repair', REPAIR_DOOR_X + 18, false)],
-    ['$ Shop', () => debugPlace(7, 'shop', SHOP_DOOR_X + 18, false)],
-    ['Teleporter', () => debugPlace(7, 'tele', TELE_DOOR_X + 18, false)],
+    ['Dr. Dooply Cutscene', () => { debugPlace(7, 'shop', SHOP_DOOR_X + 18, false); startDooplyScene(); }],
+    ['$ Shop', () => debugPlace(8, 'shop', SHOP_DOOR_X + 18, false)],
+    ['Teleporter', () => debugPlace(8, 'tele', TELE_DOOR_X + 18, false)],
   ]],
 ];
 // Progress levels: 0 intro done, 1 trash picked up, 2 trash thrown, 3 ring zapped,
-// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done, 7 got Zed.
+// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done, 7 got Zed, 8 got the pistol.
 function debugPlace(level, where, x, flip) {
   if (!playerName) playerName = 'PLAYER';
   startCutscene();
@@ -3880,6 +4038,7 @@ function debugPlace(level, where, x, flip) {
   if (level >= 5) { bossDone = true; portalOn = true; labDoorT = 1; Object.assign(doc, { room: 'lab', x: DOC_LAB_X, flip: true }); }
   if (level >= 6) { labTalked = true; doc.room = 'repair'; }
   if (level >= 7) zedOn = true;
+  if (level >= 8) hasPistol = true;
   room = where;
   Object.assign(player, { x, y: roomFloor(), vx: 0, vy: 0, onGround: true, sitting: false, flip, pose: null });
   camY = camYFor(player.y);
