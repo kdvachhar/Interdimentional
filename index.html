@@ -112,6 +112,7 @@ const sfx = {
     [320, 467, 891, 1230].forEach((f, i) => tone({ type: i % 2 ? 'square' : 'sine', f0: f, f1: f * 0.98, dur: 0.7, vol: 0.06 }));
     noise({ dur: 0.12, vol: 0.2, f0: 2000, f1: 300 });
   },
+  boing: () => { tone({ type: 'sine', f0: 180, f1: 520, dur: 0.25, vol: 0.14 }); tone({ type: 'triangle', f0: 360, f1: 900, dur: 0.18, vol: 0.06, delay: 0.03 }); },
   shot: () => {
     noise({ dur: 0.12, vol: 0.2, filter: 'highpass', f0: 2500, f1: 600 });
     tone({ f0: 520, f1: 120, dur: 0.1, vol: 0.08 });
@@ -1939,6 +1940,7 @@ const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
     put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : (x % 6 === 0 || ry % 6 === 1) ? '#22293a' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
   }
   drawTunnel(l2x, 0, LAB2_FLOOR, false);                   // back to the first lab room
+  drawTunnel(l2x, LAB2_W - TUNNEL_W, LAB2_FLOOR, true);    // on to the training room
   // Console in the bottom-left corner: a round dial and a row of lights.
   const cx0 = 32, cw = 62, ctop = LAB2_FLOOR - 40;
   sb(STEEL, cx0, ctop, cw, 40, 1);
@@ -1981,10 +1983,10 @@ const LAB2_CASES = [   // [frame x, y, w, h, doorstep y, place]
     drawPlaceIcon(l2x, place, cx, Math.round((ay + top - 4) / 2), place === 'money' ? '#2a6a3a' : place === 'hammer' ? '#5a5a7a' : '#2a5a8a');
   }
 }
-const LAB2_TUNNEL = tunnelRoof(0, LAB2_FLOOR, false);
+const LAB2_TUNNEL = tunnelRoof(0, LAB2_FLOOR, false), LAB2_TUNNEL_R = tunnelRoof(LAB2_W - TUNNEL_W, LAB2_FLOOR, true);
 const LAB2_PLATFORMS = [
   { x: 0, y: LAB2_FLOOR, w: LAB2_W },
-  LAB2_TUNNEL.top,                       // tunnel roof
+  LAB2_TUNNEL.top, LAB2_TUNNEL_R.top,    // tunnel roofs
   { x: 32, y: LAB2_FLOOR - 40, w: 62 },                        // console top
   ...LAB2_LEDGES.map(([x, y, w]) => ({ x, y, w })),
   ...LAB2_CASES.map(([ax, ay, aw, ah, py]) => ({ x: Math.round(ax + aw / 2) - 23, y: py, w: 46 })),   // doorsteps
@@ -2005,7 +2007,7 @@ const DOC_LOOKS = [
   { G: '#c05020', c: '#e08020' },
   { G: '#202020', s: '#8a5a38', S: '#5a3820', c: '#2c5ab4' },
 ].map(docLook);
-const LAB2_SCIS = [[118, LAB2_FLOOR, true, 0], [196, LAB2_FLOOR, false, 1], [282, LAB2_FLOOR, true, 2],
+const LAB2_SCIS = [[118, LAB2_FLOOR, true, 0], [196, LAB2_FLOOR, false, 1], [250, LAB2_FLOOR, true, 2],
                    [160, 206, true, 3], [150, 168, false, 4], [62, LAB2_FLOOR - 40, false, 1]];
 
 // ---------- The repair shop (through the hammer doorway) ----------
@@ -2347,7 +2349,7 @@ const ROOMS = {
   tele:    { bg: teleBg,    w: TELE_W,    platforms: TELE_PLATFORMS,    rightWall: TELE_W - 6 },
   shop:    { bg: shopBg,    w: SHOP_W,    platforms: SHOP_PLATFORMS,    rightWall: SHOP_W - 6 },
   repair:  { bg: repairBg,  w: REPAIR_W,  platforms: REPAIR_PLATFORMS,  rightWall: REPAIR_W - 6 },
-  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR, left: 'lab', ceilings: [LAB2_TUNNEL.under] },
+  lab2:    { bg: lab2Bg,    w: LAB2_W,    platforms: LAB2_PLATFORMS,    rightWall: LAB2_W - 6, h: LAB2_H, floor: LAB2_FLOOR, left: 'lab', right: 'training', ceilings: [LAB2_TUNNEL.under, LAB2_TUNNEL_R.under] },
 };
 let room = 'living';
 const curRoom = () => ROOMS[room];
@@ -2413,12 +2415,12 @@ function drawCaption(speaker, text, shown, style = GOLD) {
 function drawHUD(now) {
   if (zedOn) drawStatsHUD();
   // Minimap: the alley, the living room, and the town beyond the locked door. Current room is lit.
-  const mx = W - 112, my = 2;
-  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 112, 14);
-  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 110, 12);
-  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7], ['shop', 90, 7], ['tele', 99, 7]];
+  const mx = W - 121, my = 2;
+  ctx.fillStyle = '#101018'; ctx.fillRect(mx - 1, my - 1, 121, 14);
+  ctx.fillStyle = '#183078'; ctx.fillRect(mx, my, 119, 12);
+  const cells = [['alley', 2, 8], ['living', 12, 14], ['town', 28, 8], ['town2', 38, 11], ['town3', 50, 11], ['lab', 63, 7], ['lab2', 72, 7], ['repair', 81, 7], ['shop', 90, 7], ['tele', 99, 7], ['training', 108, 9]];
   for (const [name, cx, cw] of cells) {
-    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || ['repair', 'shop', 'tele'].includes(name) ? '#304890' : '#4870c0';
+    ctx.fillStyle = name === room ? '#e858a8' : name.startsWith('town') || name.startsWith('lab') || ['repair', 'shop', 'tele', 'training'].includes(name) ? '#304890' : '#4870c0';
     ctx.fillRect(mx + cx, my + 3, cw, 6);
   }
   ctx.fillStyle = '#f0d020'; ctx.fillRect(mx + 26, my + 5, 2, 2);
@@ -2563,6 +2565,7 @@ function updateDoor(dt) {
   if (room === 'lab' && !labTalked) startLabScene();
   if (room === 'repair' && !zedOn && doc.room === 'repair') startZedScene();
   if (room === 'shop' && zedOn && !hasPistol) startDooplyScene();
+  if (room === 'training') { if (hasPistol && !trainDone) startTraining(); else train = null; }
   if (zedOn) zedSnap();
   // Once the trash is out, Mom is waiting in the living room.
   if (room === 'living' && trashDone) {
@@ -2639,6 +2642,7 @@ function startCutscene() {
   labScene = null; labTalked = false; enterQueued = false;
   zedScene = null; zedOn = false;
   dooplyScene = null; hasPistol = false; pistolNewT = 0; shootT = 0; bullets = [];
+  train = null; trainDone = false; aiming = false; TRAIN_PLATFORMS.length = TRAIN_BASE_PLATFORMS;
   Object.assign(doc, { room: 'town3', x: 840, flip: false, walkT: 0, moving: false });
   toast = null;
   room = 'living';
@@ -2806,8 +2810,10 @@ function renderLevel(now) {
   if (room === 'lab2') for (const [x, y, flip, look] of LAB2_SCIS) chars.unshift({ img: DOC_LOOKS[look], x, y, flip });   // behind you
   if (room === 'tele') drawTeleBeam(now);
   if (room === 'shop') chars.unshift({ img: DOOPLY, x: DOOPLY_X, y: FLOOR_Y, flip: true });
+  if (room === 'training') { chars.unshift({ img: SELCORN, x: SELCORN_X, y: FLOOR_Y, flip: true }); drawTraining(); }
   if (room === 'lab') drawTunnelLight(LAB_W, FLOOR_Y);
-  if (room === 'lab2') drawTunnelLight(0, LAB2_FLOOR);
+  if (room === 'lab2') { drawTunnelLight(0, LAB2_FLOOR); drawTunnelLight(LAB2_W, LAB2_FLOOR); }
+  if (room === 'training') drawTunnelLight(0, FLOOR_Y);
   if (room === 'repair') drawRepairShop();
   else if (doc.room === room) chars.unshift({ img: doc.moving && Math.floor(doc.walkT / 0.15) % 2 ? DOC_WALK : DOC_STAND, ...doc, y: FLOOR_Y });
   const zedTucking = (zedScene && zedScene.phase === 'tuck') || (dooplyScene && dooplyScene.phase === 'tuck');
@@ -2845,6 +2851,8 @@ function renderLevel(now) {
     drawZedScene(now);
   } else if (state === 'dooplyScene') {
     drawDooplyScene();
+  } else if (state === 'trainTalk') {
+    drawTrainScene();
   } else {
     drawInteractPrompt(now);
     drawToast(now);
@@ -3577,33 +3585,257 @@ const PISTOL_HELD = sprite([
   '..kk..',
 ]);
 let hasPistol = false, pistolNewT = 0, shootT = 0, shotCD = 0, bullets = [];
+// Aim mode: hold the mouse/touchpad down and a red line follows the pointer.
+let aiming = false, gunAngle = 0;
+const mouse = { x: W / 2, y: H / 2 };
+const gunOrigin = () => [player.x, player.y - 14];
+const mouseWorld = () => [mouse.x + camX, mouse.y + camY];
 function shoot() {
   if (!hasPistol || shotCD > 0 || doorT) return;
-  const p = player, dir = p.flip ? -1 : 1;
-  bullets.push({ x: p.x + dir * 9, y: p.y - 14, vx: dir * 260, life: 0.9 });
+  const p = player, [ox, oy] = gunOrigin();
+  // Direction: the aim line, or up (Up), or down while in the air (Down), or the way you face.
+  if (aiming) { const [mx, my] = mouseWorld(); gunAngle = Math.atan2(my - oy, mx - ox); }
+  else if (held.has('ArrowUp')) gunAngle = -Math.PI / 2;
+  else if (held.has('ArrowDown') && !p.onGround) gunAngle = Math.PI / 2;
+  else gunAngle = p.flip ? Math.PI : 0;
+  const cx = Math.cos(gunAngle), cy = Math.sin(gunAngle);
+  bullets.push({ x: ox + cx * 9, y: oy + cy * 9, vx: cx * 260, vy: cy * 260, life: 0.9 });
   shootT = 0.3; shotCD = 0.25;
   sfx.shot();
 }
 function updateBullets(dt) {
   shootT = Math.max(0, shootT - dt); shotCD = Math.max(0, shotCD - dt); pistolNewT = Math.max(0, pistolNewT - dt);
-  for (const b of bullets) { b.x += b.vx * dt; b.life -= dt; }
-  bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < curRoom().w);
+  if (aiming) { const [mx] = mouseWorld(); player.flip = mx < player.x; }
+  for (const b of bullets) { b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; }
+  const rh = curRoom().h || H;
+  bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < curRoom().w && b.y > -4 && b.y < rh + 4);
 }
 function drawGun() {
   const p = player;
-  if (hasPistol && shootT > 0 && state === 'play') {
-    const dir = p.flip ? -1 : 1;
+  if (hasPistol && (shootT > 0 || aiming) && state === 'play') {
+    // The pistol in your hand, pointing where you shoot (or where you aim).
+    let a = gunAngle;
+    if (aiming && shootT <= 0) { const [ox, oy] = gunOrigin(), [mx, my] = mouseWorld(); a = Math.atan2(my - oy, mx - ox); }
     ctx.save();
-    ctx.translate(Math.round(p.x - camX + dir * 5), Math.round(p.y - 15));
-    ctx.scale(dir, 1);
-    ctx.drawImage(PISTOL_HELD, 0, 0);
-    if (shootT > 0.22) { ctx.fillStyle = '#fff8c0'; ctx.fillRect(6, 0, 2, 2); ctx.fillStyle = '#f8d040'; ctx.fillRect(8, 0, 1, 1); }   // muzzle flash
+    ctx.translate(Math.round(p.x - camX), Math.round(p.y - 15));
+    ctx.rotate(a);
+    if (Math.cos(a) < -0.01) ctx.scale(1, -1);      // keep the gun right side up
+    ctx.drawImage(PISTOL_HELD, 4, -1);
+    if (shootT > 0.22) { ctx.fillStyle = '#fff8c0'; ctx.fillRect(10, -1, 2, 2); ctx.fillStyle = '#f8d040'; ctx.fillRect(12, -1, 1, 1); }   // muzzle flash
     ctx.restore();
   }
+  if (aiming && hasPistol && state === 'play') {
+    // Red aim line out toward the pointer, with a little crosshair on it.
+    const [ox, oy] = gunOrigin(), [mx, my] = mouseWorld(), a = Math.atan2(my - oy, mx - ox);
+    ctx.fillStyle = '#ff3030';
+    for (let d = 10; d < 320; d += 2) ctx.fillRect(Math.round(ox + Math.cos(a) * d - camX), Math.round(oy + Math.sin(a) * d), 1, 1);
+    const cx = Math.round(mx - camX), cy = Math.round(my);
+    ctx.fillStyle = '#ffa0a0';
+    ctx.fillRect(cx - 3, cy, 2, 1); ctx.fillRect(cx + 2, cy, 2, 1); ctx.fillRect(cx, cy - 3, 1, 2); ctx.fillRect(cx, cy + 2, 1, 2);
+  }
   for (const b of bullets) {
-    const x = Math.round(b.x - camX), y = Math.round(b.y), back = b.vx > 0 ? -1 : 1;
-    ctx.fillStyle = '#f8d040'; ctx.fillRect(x + back * 3, y, 3, 1);
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 1, 1);
+    const sp = Math.hypot(b.vx, b.vy), ux = b.vx / sp, uy = b.vy / sp;
+    ctx.fillStyle = '#f8d040';
+    for (let k = 1; k <= 3; k++) ctx.fillRect(Math.round(b.x - ux * k - camX), Math.round(b.y - uy * k), 1, 1);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(b.x - camX), Math.round(b.y), 1, 1);
+  }
+}
+
+// ---------- The training room (through the tunnel on the right of lab room 2) ----------
+// Dr. Selcorn walks you through the controls with pop-up targets.
+const TRAIN_W = 240, SELCORN_X = 208, PILLOW_X = 112;
+const [trainBg, tgx] = makeCanvas(TRAIN_W, H);
+{
+  const put = (x, y, c) => { tgx.fillStyle = c; tgx.fillRect(x, y, 1, 1); };
+  const sb = (ramp, x, y, w, h, c = 1) => shadedBox(ramp, x, y, w, h, c, tgx);
+  for (let y = 0; y < FLOOR_Y; y++) for (let x = 0; x < TRAIN_W; x++) {
+    const px = x % 40;
+    let c = bayer(x, y) > y / FLOOR_Y ? '#1e2230' : '#262c3c';
+    if (px === 0 || y === 46) c = '#0a0c14';
+    else if (px === 1 || y === 47) c = '#3a4258';
+    if (y >= 104 && y < 110) c = ((x + y) >> 2) % 2 ? '#f8d040' : '#101018';            // hazard stripe
+    put(x, y, c);
+  }
+  // Ceiling with the target rail.
+  for (let y = 0; y < 14; y++) for (let x = 0; x < TRAIN_W; x++) put(x, y, y === 13 ? '#0a0e18' : '#121826');
+  sb(STEEL, -2, 12, TRAIN_W + 4, 4, 0);
+  for (let x = 4; x < TRAIN_W; x += 10) put(x, 14, '#f8d040');
+  // TRAINING sign.
+  sb(['#1a2030', '#2a3448', '#3a4864', '#5a6a8a'], 78, 22, 84, 16, 1);
+  const name = textImg('TRAINING', { rows: ['#f8d040'], outline: '#101018' });
+  tgx.drawImage(name, 120 - Math.round(name.width / 2), 25);
+  // Metal floor with yellow guide lines.
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < TRAIN_W; x++) {
+    const ry = y - FLOOR_Y;
+    put(x, y, ry === 0 ? '#c0c8d8' : ry === 1 ? '#101018' : ry === 4 && x % 12 < 6 ? '#c8a030' : bayer(x, y) > 0.5 ? '#3a4458' : '#465268');
+  }
+  drawTunnel(tgx, 0, FLOOR_Y, false);                     // back to lab room 2
+}
+const TRAIN_TUNNEL = tunnelRoof(0, FLOOR_Y, false);
+const TRAIN_PLATFORMS = [{ x: 0, y: FLOOR_Y, w: TRAIN_W }, TRAIN_TUNNEL.top];
+const TRAIN_BASE_PLATFORMS = TRAIN_PLATFORMS.length;
+const SELCORN = (() => {
+  const rows = [...DOC_TOP, ...DOC_STAND_LEGS];
+  rows[0] = '....kkkkkk....'; rows[1] = '..kkssssssk...'; rows[2] = '.kssssssssssk.'; rows[3] = 'kGGsssssssGGk.';   // bald on top
+  const save = { ...PAL };
+  Object.assign(PAL, { G: '#a0a8b8', c: '#9048c0', B: '#2a2a38' });
+  const img = sprite(rows);
+  Object.keys(PAL).forEach(k => delete PAL[k]);
+  Object.assign(PAL, save);
+  return img;
+})();
+const TRAIN_LINES = {
+  s1: "I SEE YOU'VE GOT A GUN NOW. NOW, BEFORE YOU GO OUT THERE, LET'S GO OVER THE CONTROLS.",
+  s2: "PRESS SHIFT TO SHOOT YOUR GUN IN THE DIRECTION YOU'RE FACING.",
+  s3: "GOOD. NOW IF YOU PRESS UP AND SHIFT, YOU'LL SHOOT UP.",
+  s4: 'NOW IF YOU JUMP AND PRESS DOWN AND SHIFT ON AN ENEMY OR BOUNCY SURFACE, YOU CAN GET EXTRA HEIGHT.',
+  s5: 'IF YOU PRESS AND HOLD THE TOUCHPAD, YOU GO INTO AIM MODE.',
+  s6: 'AIM WITH THE RED LINE, THEN PRESS SHIFT TO SHOOT.',
+  s7: 'I THINK YOU ARE FAMILIAR ENOUGH WITH THE CONTROLS TO CONTINUE.',
+};
+ROOMS.training = { bg: trainBg, w: TRAIN_W, platforms: TRAIN_PLATFORMS, rightWall: TRAIN_W - 6, left: 'lab2', ceilings: [TRAIN_TUNNEL.under] };
+let train = null, trainDone = false;
+function startTraining() {
+  TRAIN_PLATFORMS.length = TRAIN_BASE_PLATFORMS;
+  train = { step: 'walk', t: 0, lines: null, li: 0, shown: 0, then: null, targets: [], pillow: null, plat: null, wait: 0, next: null };
+  state = 'trainTalk';
+  held.clear(); aiming = false;
+}
+// Dr. Selcorn says some lines (you can't move while he talks), then `then` runs.
+function trainSay(keys, then) {
+  Object.assign(train, { lines: keys, li: 0, shown: 0, t: 0, then });
+  state = 'trainTalk';
+  held.clear(); aiming = false;
+}
+function addTarget(x, cy, kind) { train.targets.push({ x, cy, kind, k: 0, state: 'rise' }); sfx.whir(); }
+function targetsLeft() { return train.targets.some(t => t.state !== 'sink' && t.state !== 'gone'); }
+// What happens after each set of targets is cleared.
+function trainCleared() {
+  const p = player;
+  if (train.step === 'two') trainSay(['s3'], () => { train.step = 'up'; addTarget(Math.max(30, Math.min(210, p.x)), 50, 'hang'); });
+  else if (train.step === 'up') trainSay(['s4'], () => {
+    train.step = 'bounce';
+    train.pillow = { k: 0, squish: 0 };
+    train.plat = { x: 22, w: 56, k: 0, added: false };
+    sfx.creak();
+  });
+  else if (train.step === 'bounce') {
+    train.step = 'aim';
+    const ty = Math.max(30, p.y - 60);
+    addTarget(Math.max(20, p.x - 60), ty, 'hang');
+    addTarget(Math.min(220, p.x + 60), ty, 'hang');
+    train.wait = 1.0; train.next = () => trainSay(['s5', 's6'], null);
+  } else if (train.step === 'aim') trainSay(['s7'], () => { train.step = 'done'; trainDone = true; });
+}
+function updateTraining(dt) {
+  const tr = train, p = player;
+  if (!tr || room !== 'training') return;
+  tr.t += dt;
+  // Talking.
+  if (state === 'trainTalk' && tr.lines) {
+    const text = TRAIN_LINES[tr.lines[tr.li]], prev = tr.shown;
+    tr.shown = Math.min(text.length, tr.t * 30);
+    voiceBlips(prev, tr.shown, text, false);
+    if (lineDone(tr.shown, text.length)) {
+      tr.li++; tr.t = 0; tr.shown = 0;
+      if (tr.li >= tr.lines.length) {
+        tr.lines = null; state = 'play';
+        const then = tr.then; tr.then = null;
+        if (then) then();
+      }
+    }
+  } else if (state === 'trainTalk' && tr.step === 'walk') {
+    // You walk in to the middle of the room first.
+    Object.assign(p, { flip: false, vx: WALK_SPEED });
+    p.x += WALK_SPEED * dt; p.walkT += dt; guySteps(p);
+    if (p.x >= 100) {
+      p.vx = 0; tr.step = 'two';
+      trainSay(['s1', 's2'], () => { addTarget(p.x - 56, FLOOR_Y, 'post'); addTarget(p.x + 56, FLOOR_Y, 'post'); });
+    }
+  }
+  // Delayed follow-ups.
+  if (tr.wait > 0 && (tr.wait -= dt) <= 0 && tr.next) { const n = tr.next; tr.next = null; n(); }
+  // Targets pop up / lower down, and sink away when hit.
+  for (const t of tr.targets) {
+    if (t.state === 'rise') { t.k = Math.min(1, t.k + dt * 2.5); if (t.k >= 1) t.state = 'up'; }
+    else if (t.state === 'sink') { t.k = Math.max(0, t.k - dt * 3); if (t.k <= 0) t.state = 'gone'; }
+  }
+  // Pillow and the lowering platform (with a target on its left end).
+  if (tr.pillow) { tr.pillow.k = Math.min(1, tr.pillow.k + dt * 3); tr.pillow.squish = Math.max(0, tr.pillow.squish - dt); }
+  if (tr.plat) {
+    tr.plat.k = Math.min(1, tr.plat.k + dt * 0.8);
+    if (tr.plat.k >= 1 && !tr.plat.added) {
+      tr.plat.added = true;
+      TRAIN_PLATFORMS.push({ x: tr.plat.x, y: 56, w: tr.plat.w });
+      addTarget(tr.plat.x + 5, 56, 'post');
+    }
+  }
+  // Bullets: hit targets, or bounce you off the pillow.
+  for (const b of bullets) {
+    for (const t of tr.targets) {
+      if (t.state !== 'up') continue;
+      const cy = t.kind === 'post' ? t.cy - 14 : t.cy;
+      if (Math.hypot(b.x - t.x, b.y - cy) < 7) {
+        t.state = 'sink'; b.life = 0; sfx.clang();
+        burst(t.x, cy, ['#ffffff', '#e83030', '#f8d040'], 8, 40);
+        if (!targetsLeft()) { tr.wait = 0.6; tr.next = trainCleared; }
+      }
+    }
+    const pl = tr.pillow;
+    if (pl && pl.k >= 1 && b.vy > 0 && b.life > 0 && Math.abs(b.x - PILLOW_X) < 14 && b.y >= FLOOR_Y - 8) {
+      b.life = 0; pl.squish = 0.35; sfx.boing();
+      if (!p.onGround && Math.abs(p.x - PILLOW_X) < 30) { p.vy = -340; burst(PILLOW_X, FLOOR_Y - 6, ['#ffffff', '#c8d8f0'], 6, 30); }
+    }
+  }
+}
+function drawTarget(t) {
+  const post = t.kind === 'post';
+  // Posts rise out of the floor (or platform); hanging ones lower from the ceiling rail.
+  const cy = post ? Math.round(t.cy - 14 + (1 - t.k) * 26) : Math.round(16 + (t.cy - 16) * t.k);
+  const x = Math.round(t.x - camX);
+  ctx.save();
+  if (post) { ctx.beginPath(); ctx.rect(x - 8, 0, 16, t.cy); ctx.clip(); }
+  ctx.fillStyle = '#5a6a8a';
+  if (post) { ctx.fillRect(x, cy + 6, 1, t.cy - cy - 6); ctx.fillRect(x - 1, cy + 6, 1, t.cy - cy - 6); }
+  else for (let y = 16; y < cy - 6; y += 2) ctx.fillRect(x, y, 1, 1);           // chain
+  for (let y = -6; y <= 6; y++) for (let xx = -6; xx <= 6; xx++) {
+    const d = Math.hypot(xx, y);
+    if (d > 6.4) continue;
+    ctx.fillStyle = d > 5.5 ? '#101018' : d > 4.3 ? '#e83030' : d > 3 ? '#ffffff' : d > 1.6 ? '#e83030' : '#ffffff';
+    ctx.fillRect(x + xx, cy + y, 1, 1);
+  }
+  ctx.restore();
+}
+function drawTraining() {
+  const tr = train;
+  if (!tr) return;
+  if (tr.plat) {
+    const y = Math.round(-6 + (56 + 6) * tr.plat.k), x = Math.round(tr.plat.x - camX);
+    ctx.fillStyle = '#5a6a8a';
+    for (let cy = 16; cy < y; cy += 2) { ctx.fillRect(x + 4, cy, 1, 1); ctx.fillRect(x + tr.plat.w - 5, cy, 1, 1); }   // chains
+    cbox(ctx, x, y, tr.plat.w, 6, 1, bevel(STEEL, x, y, tr.plat.w, 6));
+  }
+  for (const t of tr.targets) if (t.state !== 'gone') drawTarget(t);
+  if (tr.pillow) {
+    // A big soft pillow; squishes when it bounces you.
+    const sq = tr.pillow.squish, w = Math.round(28 * tr.pillow.k + sq * 8), h = Math.max(2, Math.round(9 * tr.pillow.k - sq * 6));
+    const x0 = Math.round(PILLOW_X - camX - w / 2), y0 = FLOOR_Y - h;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const u = (x - w / 2 + 0.5) / (w / 2), v = (y - h / 2 + 0.5) / (h / 2);
+      if (u ** 4 + v ** 2 > 1) continue;
+      const edge = u ** 4 + v ** 2 > 0.75;
+      ctx.fillStyle = edge ? '#101018' : y < h / 2 - 1 ? '#ffffff' : bayer(x, y) > 0.2 ? '#c8d8f0' : '#a0b0d0';
+      ctx.fillRect(x0 + x, y0 + y, 1, 1);
+    }
+  }
+}
+function drawTrainScene() {
+  const tr = train;
+  if (tr && tr.lines) drawCaption('DR. SELCORN', TRAIN_LINES[tr.lines[tr.li]], Math.floor(tr.shown));
+  if (fadeInT > 0) {
+    ctx.globalAlpha = Math.ceil(fadeInT / 0.4 * 4) / 4;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -3903,9 +4135,11 @@ function updateLevel(dt) {
   else if (state === 'labScene') updateLabScene(dt);
   else if (state === 'zedScene') updateZedScene(dt);
   else if (state === 'dooplyScene') updateDooplyScene(dt);
+  else if (state === 'trainTalk') { /* Dr. Selcorn is talking (see updateTraining) */ }
   else updatePlay(dt);
   updateZed(dt);
   updateBullets(dt);
+  updateTraining(dt);
   fadeInT = Math.max(0, fadeInT - dt);
   updateParticles(dt);
 }
@@ -3963,7 +4197,7 @@ function loop(now) {
     }
   } else if (state === 'name' || state === 'confirm') {
     renderName(now);
-  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene') {
+  } else if (state === 'cutscene' || state === 'play' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene' || state === 'trainTalk') {
     updateLevel(dt);
     renderLevel(now);
   }
@@ -3976,7 +4210,7 @@ addEventListener('keydown', e => {
   else if (state === 'select') { if (chosenAt === null && e.code === 'Escape') backToTitle(); }
   else if (state === 'name') nameKey(e);
   else if (state === 'confirm') confirmKey(e);
-  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene') {
+  else if (state === 'cutscene' || state === 'ringScene' || state === 'praise' || state === 'boss' || state === 'labScene' || state === 'zedScene' || state === 'dooplyScene' || state === 'trainTalk') {
     // Cutscenes can't be skipped, but Enter moves on to the next dialogue box.
     if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) enterQueued = true;
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -4022,10 +4256,13 @@ const DEBUG_SPOTS = [
     ['Dr. Dooply Cutscene', () => { debugPlace(7, 'shop', SHOP_DOOR_X + 18, false); startDooplyScene(); }],
     ['$ Shop', () => debugPlace(8, 'shop', SHOP_DOOR_X + 18, false)],
     ['Teleporter', () => debugPlace(8, 'tele', TELE_DOOR_X + 18, false)],
+    ['Training Cutscene', () => { debugPlace(8, 'training', 14, false); startTraining(); }],
+    ['Training Room', () => debugPlace(9, 'training', 60, false)],
   ]],
 ];
 // Progress levels: 0 intro done, 1 trash picked up, 2 trash thrown, 3 ring zapped,
-// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done, 7 got Zed, 8 got the pistol.
+// 4 Mom opened the door, 5 Lord of Dimensions gone, 6 lab talk done, 7 got Zed, 8 got the pistol,
+// 9 finished training.
 function debugPlace(level, where, x, flip) {
   if (!playerName) playerName = 'PLAYER';
   startCutscene();
@@ -4039,6 +4276,7 @@ function debugPlace(level, where, x, flip) {
   if (level >= 6) { labTalked = true; doc.room = 'repair'; }
   if (level >= 7) zedOn = true;
   if (level >= 8) hasPistol = true;
+  if (level >= 9) trainDone = true;
   room = where;
   Object.assign(player, { x, y: roomFloor(), vx: 0, vy: 0, onGround: true, sitting: false, flip, pose: null });
   camY = camYFor(player.y);
@@ -4141,6 +4379,14 @@ canvas.addEventListener('mousemove', e => {
     canvas.style.cursor = b >= 0 ? 'pointer' : 'default';
   }
 });
+canvas.addEventListener('mousemove', e => { [mouse.x, mouse.y] = canvasPoint(e); });
+canvas.addEventListener('mousedown', e => {
+  if (state !== 'play' || !hasPistol) return;
+  [mouse.x, mouse.y] = canvasPoint(e);
+  aiming = true;
+  canvas.style.cursor = 'none';
+});
+addEventListener('mouseup', () => { if (aiming) { aiming = false; canvas.style.cursor = 'default'; } });
 canvas.addEventListener('mouseleave', () => {
   if (state === 'select' && chosenAt === null) hover = -1;
 });
