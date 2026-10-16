@@ -2712,7 +2712,7 @@ function updatePlay(dt) {
   else if (left && !right) { p.vx = -RUN_SPEED; p.flip = true; }
   else if (right && !left) { p.vx = RUN_SPEED; p.flip = false; }
   else p.vx *= Math.pow(0.65, dt * 60);
-  if (held.has('Space') && p.onGround) {
+  if ((held.has('ArrowUp') || held.has('Space')) && p.onGround) {
     p.vy = JUMP_VEL;
     p.onGround = false;
     burst(p.x, p.y, DUST, 5, 25);
