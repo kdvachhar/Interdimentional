@@ -113,6 +113,7 @@ const sfx = {
     noise({ dur: 0.12, vol: 0.2, f0: 2000, f1: 300 });
   },
   boing: () => { tone({ type: 'sine', f0: 180, f1: 520, dur: 0.25, vol: 0.14 }); tone({ type: 'triangle', f0: 360, f1: 900, dur: 0.18, vol: 0.06, delay: 0.03 }); },
+  pop: () => { noise({ dur: 0.15, vol: 0.16, filter: 'lowpass', f0: 1800, f1: 200 }); tone({ type: 'sine', f0: 160, f1: 50, dur: 0.12, vol: 0.12 }); },
   shot: () => {
     noise({ dur: 0.12, vol: 0.2, filter: 'highpass', f0: 2500, f1: 600 });
     tone({ f0: 520, f1: 120, dur: 0.1, vol: 0.08 });
@@ -2641,7 +2642,7 @@ function startCutscene() {
   boss = null; bossDone = false; portalOn = false; twistSnap = null; labDoorT = 0;
   labScene = null; labTalked = false; enterQueued = false;
   zedScene = null; zedOn = false;
-  dooplyScene = null; hasPistol = false; pistolNewT = 0; shootT = 0; bullets = [];
+  dooplyScene = null; hasPistol = false; pistolNewT = 0; shootT = 0; bullets = []; explosions = [];
   train = null; trainDone = false; aiming = false; TRAIN_PLATFORMS.length = TRAIN_BASE_PLATFORMS;
   Object.assign(doc, { room: 'town3', x: 840, flip: false, walkT: 0, moving: false });
   toast = null;
@@ -3603,12 +3604,36 @@ function shoot() {
   shootT = 0.3; shotCD = 0.25;
   sfx.shot();
 }
+// A bullet that hits something bursts into a little explosion.
+let explosions = [];
+function explodeBullet(b, x = b.x, y = b.y) {
+  b.life = 0;
+  explosions.push({ x, y, t: 0 });
+  burst(x, y, ['#fff8c0', '#f8d040', '#f07018'], 5, 45);
+  sfx.pop();
+}
 function updateBullets(dt) {
   shootT = Math.max(0, shootT - dt); shotCD = Math.max(0, shotCD - dt); pistolNewT = Math.max(0, pistolNewT - dt);
   if (aiming) { const [mx] = mouseWorld(); player.flip = mx < player.x; }
-  for (const b of bullets) { b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; }
-  const rh = curRoom().h || H;
-  bullets = bullets.filter(b => b.life > 0 && b.x > 0 && b.x < curRoom().w && b.y > -4 && b.y < rh + 4);
+  const room_ = curRoom(), rh = room_.h || H;
+  for (const b of bullets) {
+    const px = b.x, py = b.y;
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    // Walls at the room edges.
+    if (b.x <= 0 || b.x >= room_.w) { explodeBullet(b, Math.max(1, Math.min(room_.w - 1, b.x)), b.y); continue; }
+    // Floors, platforms and ceilings (anything flat the bullet crosses).
+    const pil = room === 'training' && train && train.pillow && train.pillow.k >= 1;
+    if (pil && b.vy > 0 && Math.abs(b.x - PILLOW_X) < 14 && b.y >= FLOOR_Y - 8) continue;   // the pillow catches it (see updateTraining)
+    for (const pl of [...room_.platforms, ...(room_.ceilings || [])]) {
+      if ((py - pl.y) * (b.y - pl.y) <= 0 && py !== b.y) {
+        const k = (pl.y - py) / (b.y - py), hx = px + (b.x - px) * k;
+        if (hx >= pl.x && hx <= pl.x + pl.w) { explodeBullet(b, hx, pl.y); break; }
+      }
+    }
+  }
+  bullets = bullets.filter(b => b.life > 0 && b.y > -4 && b.y < rh + 4);
+  for (const e of explosions) e.t += dt;
+  explosions = explosions.filter(e => e.t < 0.3);
 }
 function drawGun() {
   const p = player;
@@ -3632,6 +3657,17 @@ function drawGun() {
     const cx = Math.round(mx - camX), cy = Math.round(my);
     ctx.fillStyle = '#ffa0a0';
     ctx.fillRect(cx - 3, cy, 2, 1); ctx.fillRect(cx + 2, cy, 2, 1); ctx.fillRect(cx, cy - 3, 1, 2); ctx.fillRect(cx, cy + 2, 1, 2);
+  }
+  for (const e of explosions) {
+    // A flash, then a ring of fire that grows and breaks apart.
+    const x0 = Math.round(e.x - camX), y0 = Math.round(e.y), r = 1 + e.t * 22;
+    if (e.t < 0.06) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x0 - 2, y0 - 2, 5, 5); }
+    for (let y = -8; y <= 8; y++) for (let x = -8; x <= 8; x++) {
+      const d = Math.hypot(x, y);
+      if (d > r || d < r - 2.5 || bayer(x0 + x, y0 + y) + 0.5 < e.t * 3) continue;
+      ctx.fillStyle = d > r - 1 ? '#f07018' : e.t < 0.12 ? '#fff8c0' : '#f8d040';
+      ctx.fillRect(x0 + x, y0 + y, 1, 1);
+    }
   }
   for (const b of bullets) {
     const sp = Math.hypot(b.vx, b.vy), ux = b.vx / sp, uy = b.vy / sp;
@@ -3772,18 +3808,20 @@ function updateTraining(dt) {
   }
   // Bullets: hit targets, or bounce you off the pillow.
   for (const b of bullets) {
+    if (b.life <= 0) continue;
     for (const t of tr.targets) {
+      if (b.life <= 0) break;
       if (t.state !== 'up') continue;
       const cy = t.kind === 'post' ? t.cy - 14 : t.cy;
       if (Math.hypot(b.x - t.x, b.y - cy) < 7) {
-        t.state = 'sink'; b.life = 0; sfx.clang();
+        t.state = 'sink'; explodeBullet(b); sfx.clang();
         burst(t.x, cy, ['#ffffff', '#e83030', '#f8d040'], 8, 40);
         if (!targetsLeft()) { tr.wait = 0.6; tr.next = trainCleared; }
       }
     }
     const pl = tr.pillow;
     if (pl && pl.k >= 1 && b.vy > 0 && b.life > 0 && Math.abs(b.x - PILLOW_X) < 14 && b.y >= FLOOR_Y - 8) {
-      b.life = 0; pl.squish = 0.35; sfx.boing();
+      explodeBullet(b, b.x, FLOOR_Y - 6); pl.squish = 0.35; sfx.boing();
       if (!p.onGround && Math.abs(p.x - PILLOW_X) < 30) { p.vy = -340; burst(PILLOW_X, FLOOR_Y - 6, ['#ffffff', '#c8d8f0'], 6, 30); }
     }
   }
